@@ -85,7 +85,7 @@ function makeMockEmbeddingsService() {
   };
 }
 
-function makeMockMistralService() {
+function makeMockLlmService() {
   return {
     chatStream: vi.fn(),
   };
@@ -99,7 +99,7 @@ function createService() {
   const sessionRepo = makeMockSessionRepo();
   const messageRepo = makeMockMessageRepo();
   const embeddingsService = makeMockEmbeddingsService();
-  const mistralService = makeMockMistralService();
+  const llmService = makeMockLlmService();
   const dataSource = makeMockDataSource();
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
@@ -107,11 +107,11 @@ function createService() {
     sessionRepo,
     messageRepo,
     embeddingsService,
-    mistralService,
+    llmService,
     dataSource,
   ) as RagService;
 
-  return { service, sessionRepo, messageRepo, embeddingsService, mistralService, dataSource };
+  return { service, sessionRepo, messageRepo, embeddingsService, llmService, dataSource };
 }
 
 // ---------------------------------------------------------------------------
@@ -123,16 +123,16 @@ describe('RagService', () => {
   let sessionRepo: ReturnType<typeof makeMockSessionRepo>;
   let messageRepo: ReturnType<typeof makeMockMessageRepo>;
   let embeddingsService: ReturnType<typeof makeMockEmbeddingsService>;
-  let mistralService: ReturnType<typeof makeMockMistralService>;
+  let llmService: ReturnType<typeof makeMockLlmService>;
   let dataSource: ReturnType<typeof makeMockDataSource>;
 
   beforeEach(() => {
     vi.clearAllMocks();
-    ({ service, sessionRepo, messageRepo, embeddingsService, mistralService, dataSource } =
+    ({ service, sessionRepo, messageRepo, embeddingsService, llmService, dataSource } =
       createService());
 
     // Default: chatStream returns a mock stream result
-    mistralService.chatStream.mockReturnValue({
+    llmService.chatStream.mockReturnValue({
       text: Promise.resolve('AI response text'),
       pipeUIMessageStreamToResponse: vi.fn(),
     });
@@ -215,7 +215,7 @@ describe('RagService', () => {
 
       await service.chat(null, 'How much did I spend?');
 
-      expect(mistralService.chatStream).toHaveBeenCalledWith(
+      expect(llmService.chatStream).toHaveBeenCalledWith(
         expect.objectContaining({
           messages: [
             { role: 'user', content: 'Hi' },
@@ -240,13 +240,13 @@ describe('RagService', () => {
       expect(createSqlQueryTool).toHaveBeenCalledWith(dataSource);
       expect(createUpdateCategoryTool).toHaveBeenCalledWith(dataSource);
       expect(createChartDataTool).toHaveBeenCalledWith(dataSource);
-      expect(createDecomposeQueryTool).toHaveBeenCalledWith(mistralService);
+      expect(createDecomposeQueryTool).toHaveBeenCalledWith(llmService);
     });
 
     it('passes all tools to chatStream', async () => {
       await service.chat(null, 'Search something');
 
-      expect(mistralService.chatStream).toHaveBeenCalledWith(
+      expect(llmService.chatStream).toHaveBeenCalledWith(
         expect.objectContaining({
           tools: {
             think: 'mockThinkTool',
@@ -264,9 +264,9 @@ describe('RagService', () => {
     it('passes decompose_query tool to chatStream', async () => {
       await service.chat(null, 'How much did I spend?', 'EUR');
 
-      const callArgs = mistralService.chatStream.mock.calls[0]![0]!;
+      const callArgs = llmService.chatStream.mock.calls[0]![0]!;
       expect(callArgs.tools).toHaveProperty('decompose_query', 'mockDecomposeQueryTool');
-      expect(createDecomposeQueryTool).toHaveBeenCalledWith(mistralService);
+      expect(createDecomposeQueryTool).toHaveBeenCalledWith(llmService);
     });
   });
 
@@ -274,10 +274,10 @@ describe('RagService', () => {
   // chat() — streaming and response
   // -----------------------------------------------------------------
   describe('chat() — streaming and response', () => {
-    it('calls mistralService.chatStream with stopWhen conditions', async () => {
+    it('calls llmService.chatStream with stopWhen conditions', async () => {
       await service.chat(null, 'Hello');
 
-      expect(mistralService.chatStream).toHaveBeenCalledWith(
+      expect(llmService.chatStream).toHaveBeenCalledWith(
         expect.objectContaining({
           system: expect.stringContaining('agentic financial assistant'),
           stopWhen: ['hasToolCall:done', 10],
@@ -291,7 +291,7 @@ describe('RagService', () => {
         text: Promise.resolve('AI response'),
         pipeUIMessageStreamToResponse: vi.fn(),
       };
-      mistralService.chatStream.mockReturnValue(mockStreamResult);
+      llmService.chatStream.mockReturnValue(mockStreamResult);
 
       const result = await service.chat(null, 'Hello');
 
@@ -307,7 +307,7 @@ describe('RagService', () => {
     it('includes currency in system prompt when provided', async () => {
       await service.chat(null, 'Hello', 'EUR');
 
-      expect(mistralService.chatStream).toHaveBeenCalledWith(
+      expect(llmService.chatStream).toHaveBeenCalledWith(
         expect.objectContaining({
           system: expect.stringContaining('EUR'),
         }),
@@ -317,7 +317,7 @@ describe('RagService', () => {
     it('defaults currency to USD', async () => {
       await service.chat(null, 'Hello');
 
-      expect(mistralService.chatStream).toHaveBeenCalledWith(
+      expect(llmService.chatStream).toHaveBeenCalledWith(
         expect.objectContaining({
           system: expect.stringContaining('USD'),
         }),
@@ -327,7 +327,7 @@ describe('RagService', () => {
     it('system prompt contains ReAct instructions', async () => {
       await service.chat(null, 'Hello');
 
-      const call = mistralService.chatStream.mock.calls[0][0];
+      const call = llmService.chatStream.mock.calls[0][0];
       expect(call.system).toContain('think');
       expect(call.system).toContain('done');
       expect(call.system).toContain('THINK');
@@ -346,7 +346,7 @@ describe('RagService', () => {
         resolveText = resolve;
       });
 
-      mistralService.chatStream.mockReturnValue({
+      llmService.chatStream.mockReturnValue({
         text: textPromise,
         pipeUIMessageStreamToResponse: vi.fn(),
       });
@@ -374,7 +374,7 @@ describe('RagService', () => {
     });
 
     it('sets session title for new sessions after stream completes', async () => {
-      mistralService.chatStream.mockReturnValue({
+      llmService.chatStream.mockReturnValue({
         text: Promise.resolve('AI response'),
         pipeUIMessageStreamToResponse: vi.fn(),
       });
@@ -399,7 +399,7 @@ describe('RagService', () => {
       const existingSession = { id: 'existing-session', title: 'Old chat' };
       sessionRepo.findOne.mockResolvedValue(existingSession);
 
-      mistralService.chatStream.mockReturnValue({
+      llmService.chatStream.mockReturnValue({
         text: Promise.resolve('AI response'),
         pipeUIMessageStreamToResponse: vi.fn(),
       });

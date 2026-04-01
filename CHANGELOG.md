@@ -4,6 +4,27 @@ All notable changes to the Ledger project.
 
 ## [Unreleased]
 
+## M6 — Groq LLM + Ollama Embeddings
+
+### Changed
+
+- **LLM Provider**: Migrated from Mistral AI to Groq (`llama-3.3-70b-versatile`) for chat streaming, categorization, and query decomposition
+- **Embedding Provider**: Migrated from Mistral Embed API to Ollama (`nomic-embed-text`, 768-dim local embeddings)
+- **Service Rename**: `MistralService` → `LlmService`, `src/mistral/` → `src/llm/`
+- **Categorization**: Rewritten to use `generateObject()` with Zod schema instead of raw API parsing
+- **Database**: New migration to change pgvector column from 1024 to 768 dimensions
+
+### Removed
+
+- `@mistralai/mistralai` and `@ai-sdk/mistral` dependencies
+- `MISTRAL_API_KEY` environment variable
+
+### Added
+
+- `@ai-sdk/groq` and `ollama` dependencies
+- `GROQ_API_KEY` and `OLLAMA_BASE_URL` environment variables
+- Database migration `1709700000002-ChangeEmbeddingDimension`
+
 ## [0.5.0] — 2026-03-06
 
 ### Milestone 4: Chunk & Embed

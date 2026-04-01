@@ -31,7 +31,7 @@ export class Embedding {
   @Column({ name: 'token_count', type: 'int' })
   tokenCount!: number;
 
-  @Column('vector', { length: 1024, nullable: true })
+  @Column('vector', { length: 768, nullable: true })
   embedding!: string | null;
 
   @CreateDateColumn({ name: 'created_at', type: 'timestamptz' })

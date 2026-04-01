@@ -4,7 +4,7 @@ import { Repository } from 'typeorm';
 import { Statement } from './entities/statement.entity';
 import type { ParserInterface, ParsedTransaction } from './parsers/parser.interface.js';
 import { TransactionsService } from '../transactions/transactions.service';
-import { MistralService } from '../mistral/mistral.service';
+import { LlmService } from '../llm/llm.service';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
 import * as fs from 'fs/promises';
 import * as path from 'path';
@@ -18,8 +18,8 @@ export class UploadService {
     private readonly parsers: ParserInterface[],
     @Inject(TransactionsService)
     private readonly transactionsService: TransactionsService,
-    @Inject(MistralService)
-    private readonly mistralService: MistralService,
+    @Inject(LlmService)
+    private readonly llmService: LlmService,
     @Inject(EmbeddingsService)
     private readonly embeddingsService: EmbeddingsService,
   ) {}
@@ -52,7 +52,7 @@ export class UploadService {
     await this.statementRepo.save(statement);
 
     const descriptions = parsed.map((t) => t.description);
-    const categories = await this.mistralService.categorize(descriptions);
+    const categories = await this.llmService.categorize(descriptions);
 
     // Delete existing transactions for idempotency (re-upload)
     await this.transactionsService.removeByStatement(statement.id);

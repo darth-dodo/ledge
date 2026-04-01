@@ -26,7 +26,7 @@ graph TB
         ES[Embedding Service]
         RS[RAG Service]
         AS[Analytics Service]
-        MS[Mistral Service]
+        LS[LLM Service]
     end
 
     subgraph Data ["PostgreSQL + pgvector"]
@@ -37,9 +37,12 @@ graph TB
         CM[(chat_messages)]
     end
 
-    subgraph External ["Mistral AI"]
-        ME[Embed API]
+    subgraph ExtGroq ["Groq"]
         MC[Chat API]
+    end
+
+    subgraph ExtOllama ["Ollama"]
+        ME[Embed API]
     end
 
     UP -->|HTTP POST /upload| UC
@@ -48,8 +51,8 @@ graph TB
     CHAT -->|HTTP POST /chat| RC
 
     UC --> US --> PS --> CS --> ES
-    ES --> MS --> ME
-    RS --> MS --> MC
+    ES --> ME
+    RS --> LS --> MC
     RS --> ES
 
     US --> ST
@@ -62,7 +65,8 @@ graph TB
     style Frontend fill:#e8f4f8
     style Backend fill:#fff3cd
     style Data fill:#d4edda
-    style External fill:#f8d7da
+    style ExtGroq fill:#f8d7da
+    style ExtOllama fill:#fce4ec
 ```
 
 ---
@@ -81,13 +85,13 @@ flowchart TD
 
     E --> F[Extract Transactions<br/><i>date, description, amount, type</i>]
 
-    F --> G[AI Category Assignment<br/><i>Mistral classifies each transaction</i>]
+    F --> G[AI Category Assignment<br/><i>Groq classifies each transaction</i>]
 
     G --> H[Store in PostgreSQL<br/><i>statements + transactions tables</i>]
 
     F --> I[Chunk Statement Text<br/><i>~500 tokens with overlap</i>]
 
-    I --> J[Generate Embeddings<br/><i>Mistral Embed API → 1024-dim vectors</i>]
+    I --> J[Generate Embeddings<br/><i>Ollama nomic-embed-text → 768-dim vectors</i>]
 
     J --> K[Store in pgvector<br/><i>embeddings table</i>]
 
@@ -108,7 +112,8 @@ sequenceDiagram
     participant User
     participant Angular
     participant NestJS
-    participant Mistral as Mistral AI (Vercel AI SDK)
+    participant Groq as Groq (Vercel AI SDK)
+    participant Ollama as Ollama
     participant pgvector as PostgreSQL + pgvector
 
     User->>Angular: Types question
@@ -122,18 +127,18 @@ sequenceDiagram
     end
 
     rect rgb(248, 215, 218)
-        Note over NestJS,Mistral: 2. Streaming tool-calling loop
-        NestJS->>Mistral: streamText() with tools + history (SSE)
-        Note over NestJS,Mistral: Step 0 — DECOMPOSE
-        Mistral-->>NestJS: Tool call (decompose_query)
-        NestJS->>Mistral: generateObject() → SubQuery[] with intents
-        Mistral-->>NestJS: SubQuery[] (sql_aggregate | sql_filter | vector_search | hybrid)
-        NestJS->>Mistral: Tool result (sub-queries)
+        Note over NestJS,Groq: 2. Streaming tool-calling loop
+        NestJS->>Groq: streamText() with tools + history (SSE)
+        Note over NestJS,Groq: Step 0 — DECOMPOSE
+        Groq-->>NestJS: Tool call (decompose_query)
+        NestJS->>Groq: generateObject() → SubQuery[] with intents
+        Groq-->>NestJS: SubQuery[] (sql_aggregate | sql_filter | vector_search | hybrid)
+        NestJS->>Groq: Tool result (sub-queries)
         loop Up to remaining tool-calling steps
-            Mistral-->>NestJS: Tool call (vector_search or sql_query)
+            Groq-->>NestJS: Tool call (vector_search or sql_query)
             alt vector_search
-                NestJS->>Mistral: Embed query → 1024-dim vector
-                Mistral-->>NestJS: Query vector
+                NestJS->>Ollama: Embed query → 768-dim vector
+                Ollama-->>NestJS: Query vector
                 NestJS->>pgvector: Cosine search (top 5 chunks)
                 pgvector-->>NestJS: Relevant chunks
             else sql_query
@@ -141,9 +146,9 @@ sequenceDiagram
                 NestJS->>pgvector: Execute read-only query (LIMIT 100)
                 pgvector-->>NestJS: Query results
             end
-            NestJS->>Mistral: Tool result
+            NestJS->>Groq: Tool result
         end
-        Mistral-->>NestJS: Final text response (streamed)
+        Groq-->>NestJS: Final text response (streamed)
     end
 
     NestJS-->>Angular: SSE stream (UI message stream format)
@@ -242,7 +247,7 @@ erDiagram
         int chunk_index
         text content "chunk text"
         int token_count
-        vector embedding "1024-dim, nullable"
+        vector embedding "768-dim, nullable"
         timestamptz created_at
     }
 
@@ -325,8 +330,8 @@ graph TD
             AS2[AnalyticsService]
         end
 
-        subgraph MistralModule
-            MS2[MistralService]
+        subgraph LlmModule
+            LS2[LlmService]
         end
 
         DB["db/ (migrations + data-source)"]
@@ -337,7 +342,7 @@ graph TD
     style EmbeddingsModule fill:#fff3cd
     style RagModule fill:#f8d7da
     style AnalyticsModule fill:#e2d9f3
-    style MistralModule fill:#fce4ec
+    style LlmModule fill:#fce4ec
 ```
 
 ### Directory Layout
@@ -377,9 +382,9 @@ backend/
 │   │   ├── chunker.service.ts
 │   │   └── entities/
 │   │       └── embedding.entity.ts
-│   ├── mistral/                   # ✅ M3
-│   │   ├── mistral.module.ts
-│   │   └── mistral.service.ts
+│   ├── llm/                       # ✅ M3 (renamed from mistral/ in M6)
+│   │   ├── llm.module.ts
+│   │   └── llm.service.ts
 │   ├── db/                        # ✅ M4
 │   │   ├── data-source.ts
 │   │   ├── migrate.ts
@@ -533,43 +538,32 @@ frontend/
 
 ---
 
-## 8. Mistral AI Integration
+## 8. LLM & Embedding Integration
 
-### Four API capabilities:
+The project uses **Groq** for LLM inference (chat, categorization, query decomposition) and **Ollama** for local embeddings. The integration is split across two services: `LlmService` for all Groq-powered operations and `EmbeddingsService` for Ollama-powered vector generation.
 
-**1. Embeddings** — text → 1024-dim vector (via `@mistralai/mistralai` SDK)
+### LlmService (`src/llm/llm.service.ts`)
 
-```typescript
-// mistral.service.ts
-async embed(texts: string[]): Promise<number[][]> {
-  const response = await this.client.embeddings.create({
-    model: 'mistral-embed',
-    inputs: texts,
-  });
-  return response.data.map(d => d.embedding);
-}
-```
+Three capabilities via `@ai-sdk/groq`:
 
-**2. Chat Categorization** — batch transaction classification (via `@mistralai/mistralai` SDK)
+**1. Chat Categorization** — batch transaction classification (via Vercel AI SDK `generateObject`)
 
 ```typescript
+// llm.service.ts — uses generateObject() with Zod schema
 async categorize(descriptions: string[]): Promise<(string | null)[]> {
-  const response = await this.client.chat.complete({
-    model: 'mistral-large-latest',
-    messages: [
-      { role: 'system', content: SYSTEM_PROMPT },
-      { role: 'user', content: JSON.stringify(descriptions) },
-    ],
-    responseFormat: { type: 'json_object' },
+  const { object } = await generateObject({
+    model: this.aiModel,          // createGroq({ apiKey })('llama-3.3-70b-versatile')
+    schema: categorizeSchema,     // Zod schema for { categories: string[] }
+    prompt: `Categorize these transactions: ${JSON.stringify(descriptions)}`,
   });
-  // Parse and validate against VALID_CATEGORIES set
+  // Validate against VALID_CATEGORIES set
 }
 ```
 
-**3. Query Decomposition** — structured sub-query generation (via Vercel AI SDK `generateObject`)
+**2. Query Decomposition** — structured sub-query generation (via Vercel AI SDK `generateObject`)
 
 ```typescript
-// mistral.service.ts — uses generateObject() (non-streaming)
+// llm.service.ts — uses generateObject() (non-streaming)
 async decomposeQuery(message: string): Promise<SubQuery[]> {
   const { object } = await generateObject({
     model: this.aiModel,
@@ -585,10 +579,10 @@ async decomposeQuery(message: string): Promise<SubQuery[]> {
 }
 ```
 
-**4. Streaming Chat with Tools** — ReAct agent loop (via Vercel AI SDK `@ai-sdk/mistral`)
+**3. Streaming Chat with Tools** — ReAct agent loop (via Vercel AI SDK `@ai-sdk/groq`)
 
 ```typescript
-// mistral.service.ts — uses createMistral() from @ai-sdk/mistral
+// llm.service.ts — uses createGroq() from @ai-sdk/groq
 chatStream(params: {
   system: string;
   messages: ModelMessage[];
@@ -596,7 +590,7 @@ chatStream(params: {
   maxSteps?: number;
 }): ReturnType<typeof streamText> {
   return streamText({
-    model: this.aiModel,          // createMistral({ apiKey })('mistral-large-latest')
+    model: this.aiModel,          // createGroq({ apiKey })('llama-3.3-70b-versatile')
     system: params.system,
     messages: params.messages,
     tools: params.tools,
@@ -605,7 +599,19 @@ chatStream(params: {
 }
 ```
 
-The `MistralService` maintains two clients: the native `@mistralai/mistralai` SDK for embeddings and categorization, and a Vercel AI SDK model instance (`@ai-sdk/mistral`) for streaming chat with tool-calling support and for the non-streaming `generateObject` call used by `decomposeQuery()`. Both clients gracefully degrade when `MISTRAL_API_KEY` is not set.
+### EmbeddingsService (`src/embeddings/embeddings.service.ts`)
+
+Embeddings are generated locally via **Ollama** using the `nomic-embed-text` model (768-dim vectors).
+
+```typescript
+// embeddings.service.ts — uses ollama client
+async getEmbeddings(texts: string[]): Promise<number[][]> {
+  // Calls Ollama at OLLAMA_BASE_URL with model 'nomic-embed-text'
+  // Returns 768-dim vectors for each input text
+}
+```
+
+The `LlmService` requires `GROQ_API_KEY` and gracefully degrades when not set (categorization skipped, chat throws). The `EmbeddingsService` requires `OLLAMA_BASE_URL` (defaults to `http://localhost:11434`) for local embedding generation.
 
 ---
 
@@ -660,7 +666,8 @@ The `UploadService` iterates through registered parsers, calling `canParse()` to
 ```env
 # .env (never commit)
 DATABASE_URL=postgresql://ledger:ledger@localhost:5432/ledger
-MISTRAL_API_KEY=your-key-here
+GROQ_API_KEY=your-key-here
+OLLAMA_BASE_URL=http://localhost:11434
 JWT_SECRET=your-jwt-secret
 UPLOAD_DIR=./uploads
 ```
@@ -698,9 +705,9 @@ volumes:
 | `@nestjs/core`                | NestJS framework                         |
 | `@nestjs/typeorm` + `typeorm` | ORM + database                           |
 | `pg`                          | PostgreSQL driver                        |
-| `@mistralai/mistralai`        | Mistral AI SDK (embeddings, categorize)  |
-| `ai`                          | Vercel AI SDK (streamText, tool-calling) |
-| `@ai-sdk/mistral`             | Vercel AI SDK Mistral provider           |
+| `@ai-sdk/groq`                | Vercel AI SDK Groq provider (chat, categorize) |
+| `ai`                          | Vercel AI SDK (streamText, tool-calling)       |
+| `ollama`                      | Ollama client (local embeddings)               |
 | `zod`                         | Schema validation (tool input schemas)   |
 | `pdf-parse`                   | PDF text extraction                      |
 | `csv-parse`                   | CSV parsing                              |
@@ -751,8 +758,8 @@ backend/src/
 │   └── transactions.controller.spec.ts
 ├── embeddings/
 │   └── embeddings.service.spec.ts
-└── mistral/
-    └── mistral.service.spec.ts
+└── llm/
+    └── llm.service.spec.ts
 ```
 
 ### Frontend Test Organization

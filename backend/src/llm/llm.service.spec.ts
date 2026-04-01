@@ -4,34 +4,20 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Hoisted mock variables (available inside vi.mock factories)
 // ---------------------------------------------------------------------------
 
-const { mockChatComplete, mockStreamText, mockStepCountIs, mockCreateMistral, mockGenerateObject } =
-  vi.hoisted(() => ({
-    mockChatComplete: vi.fn(),
-    mockStreamText: vi.fn(),
-    mockStepCountIs: vi.fn(),
-    mockCreateMistral: vi.fn(),
-    mockGenerateObject: vi.fn(),
-  }));
-
-// ---------------------------------------------------------------------------
-// Mock the @mistralai/mistralai module
-// ---------------------------------------------------------------------------
-
-vi.mock('@mistralai/mistralai', () => ({
-  Mistral: vi.fn().mockImplementation(() => ({
-    chat: {
-      complete: mockChatComplete,
-    },
-  })),
+const { mockStreamText, mockStepCountIs, mockCreateGroq, mockGenerateObject } = vi.hoisted(() => ({
+  mockStreamText: vi.fn(),
+  mockStepCountIs: vi.fn(),
+  mockCreateGroq: vi.fn(),
+  mockGenerateObject: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
-// Mock @ai-sdk/mistral and ai modules
+// Mock @ai-sdk/groq and ai modules
 // ---------------------------------------------------------------------------
 
-vi.mock('@ai-sdk/mistral', () => ({
-  createMistral: (...args: unknown[]) => {
-    mockCreateMistral(...args);
+vi.mock('@ai-sdk/groq', () => ({
+  createGroq: (...args: unknown[]) => {
+    mockCreateGroq(...args);
     return () => 'mock-model';
   },
 }));
@@ -42,108 +28,76 @@ vi.mock('ai', () => ({
   generateObject: mockGenerateObject,
 }));
 
-import { MistralService } from './mistral.service.js';
-
-// ---------------------------------------------------------------------------
-// Helpers
-// ---------------------------------------------------------------------------
-
-function makeMistralResponse(content: string) {
-  return {
-    choices: [
-      {
-        message: { content },
-      },
-    ],
-  };
-}
+import { LlmService } from './llm.service.js';
 
 // ---------------------------------------------------------------------------
 // Tests
 // ---------------------------------------------------------------------------
 
-describe('MistralService', () => {
+describe('LlmService', () => {
   let originalApiKey: string | undefined;
 
   beforeEach(() => {
-    originalApiKey = process.env.MISTRAL_API_KEY;
+    originalApiKey = process.env.GROQ_API_KEY;
     vi.clearAllMocks();
   });
 
   afterEach(() => {
     // Restore the env var
     if (originalApiKey !== undefined) {
-      process.env.MISTRAL_API_KEY = originalApiKey;
+      process.env.GROQ_API_KEY = originalApiKey;
     } else {
-      delete process.env.MISTRAL_API_KEY;
+      delete process.env.GROQ_API_KEY;
     }
   });
 
   // ---------------------------------------------------------------
   // No API key
   // ---------------------------------------------------------------
-  describe('when MISTRAL_API_KEY is not set', () => {
+  describe('when GROQ_API_KEY is not set', () => {
     it('returns nulls for all descriptions', async () => {
-      delete process.env.MISTRAL_API_KEY;
-      const service = new MistralService();
+      delete process.env.GROQ_API_KEY;
+      const service = new LlmService();
 
       const result = await service.categorize(['Coffee', 'Rent', 'Netflix']);
 
       expect(result).toEqual([null, null, null]);
-      expect(mockChatComplete).not.toHaveBeenCalled();
+      expect(mockGenerateObject).not.toHaveBeenCalled();
     });
   });
 
   // ---------------------------------------------------------------
   // With API key
   // ---------------------------------------------------------------
-  describe('when MISTRAL_API_KEY is set', () => {
-    let service: MistralService;
+  describe('when GROQ_API_KEY is set', () => {
+    let service: LlmService;
 
     beforeEach(() => {
-      process.env.MISTRAL_API_KEY = 'test-api-key';
-      service = new MistralService();
+      process.env.GROQ_API_KEY = 'test-api-key';
+      service = new LlmService();
     });
 
     it('returns empty array for empty input', async () => {
       const result = await service.categorize([]);
 
       expect(result).toEqual([]);
-      expect(mockChatComplete).not.toHaveBeenCalled();
+      expect(mockGenerateObject).not.toHaveBeenCalled();
     });
 
-    it('parses valid category response as bare array', async () => {
-      mockChatComplete.mockResolvedValue(makeMistralResponse('["groceries","dining","transport"]'));
+    it('parses valid category response from generateObject', async () => {
+      mockGenerateObject.mockResolvedValue({
+        object: { categories: ['groceries', 'dining', 'transport'] },
+      });
 
       const result = await service.categorize(['WALMART GROCERY', 'PIZZA HUT', 'UBER TRIP']);
 
       expect(result).toEqual(['groceries', 'dining', 'transport']);
     });
 
-    it('parses valid category response as object with categories key', async () => {
-      mockChatComplete.mockResolvedValue(
-        makeMistralResponse('{"categories":["entertainment","shopping","health"]}'),
-      );
-
-      const result = await service.categorize(['NETFLIX', 'AMAZON', 'PHARMACY']);
-
-      expect(result).toEqual(['entertainment', 'shopping', 'health']);
-    });
-
-    it('parses response as array of objects with category property', async () => {
-      mockChatComplete.mockResolvedValue(
-        makeMistralResponse(
-          '[{"transaction":"WALMART","category":"groceries"},{"transaction":"UBER","category":"transport"}]',
-        ),
-      );
-
-      const result = await service.categorize(['WALMART', 'UBER']);
-
-      expect(result).toEqual(['groceries', 'transport']);
-    });
-
     it('returns nulls when response count mismatches input count', async () => {
-      mockChatComplete.mockResolvedValue(makeMistralResponse('["groceries","dining"]'));
+      mockGenerateObject.mockResolvedValue({
+        object: { categories: ['groceries', 'dining'] },
+      });
 
       // Sending 3 descriptions but response only has 2
       const result = await service.categorize(['WALMART', 'PIZZA HUT', 'GAS STATION']);
@@ -151,34 +105,8 @@ describe('MistralService', () => {
       expect(result).toEqual([null, null, null]);
     });
 
-    it('returns nulls when response is not valid JSON', async () => {
-      mockChatComplete.mockResolvedValue(makeMistralResponse('not valid json at all'));
-
-      const result = await service.categorize(['WALMART']);
-
-      expect(result).toEqual([null]);
-    });
-
-    it('returns nulls when response content is not a string', async () => {
-      mockChatComplete.mockResolvedValue({
-        choices: [{ message: { content: null } }],
-      });
-
-      const result = await service.categorize(['WALMART']);
-
-      expect(result).toEqual([null]);
-    });
-
-    it('returns nulls when choices array is empty', async () => {
-      mockChatComplete.mockResolvedValue({ choices: [] });
-
-      const result = await service.categorize(['WALMART']);
-
-      expect(result).toEqual([null]);
-    });
-
-    it('returns nulls on network error', async () => {
-      mockChatComplete.mockRejectedValue(new Error('Network timeout'));
+    it('returns nulls on error', async () => {
+      mockGenerateObject.mockRejectedValue(new Error('Network timeout'));
 
       const result = await service.categorize(['WALMART', 'UBER']);
 
@@ -186,9 +114,9 @@ describe('MistralService', () => {
     });
 
     it('validates categories against the allowed set', async () => {
-      mockChatComplete.mockResolvedValue(
-        makeMistralResponse('["groceries","INVALID_CATEGORY","dining"]'),
-      );
+      mockGenerateObject.mockResolvedValue({
+        object: { categories: ['groceries', 'INVALID_CATEGORY', 'dining'] },
+      });
 
       const result = await service.categorize(['WALMART', 'UNKNOWN', 'PIZZA HUT']);
 
@@ -196,47 +124,30 @@ describe('MistralService', () => {
     });
 
     it('normalizes category casing to lowercase', async () => {
-      mockChatComplete.mockResolvedValue(makeMistralResponse('["Groceries","DINING","Transport"]'));
+      mockGenerateObject.mockResolvedValue({
+        object: { categories: ['Groceries', 'DINING', 'Transport'] },
+      });
 
       const result = await service.categorize(['WALMART', 'PIZZA HUT', 'UBER']);
 
       expect(result).toEqual(['groceries', 'dining', 'transport']);
     });
 
-    it('returns null for non-string items in the categories array', async () => {
-      mockChatComplete.mockResolvedValue(makeMistralResponse('[123,"dining",null]'));
-
-      const result = await service.categorize(['WALMART', 'PIZZA HUT', 'UBER']);
-
-      expect(result).toEqual([null, 'dining', null]);
-    });
-
-    it('sends the correct model and message format', async () => {
-      mockChatComplete.mockResolvedValue(makeMistralResponse('["groceries"]'));
+    it('sends the correct schema and prompt to generateObject', async () => {
+      mockGenerateObject.mockResolvedValue({
+        object: { categories: ['groceries'] },
+      });
 
       await service.categorize(['WALMART']);
 
-      expect(mockChatComplete).toHaveBeenCalledWith(
+      expect(mockGenerateObject).toHaveBeenCalledWith(
         expect.objectContaining({
-          model: 'mistral-large-latest',
-          messages: expect.arrayContaining([
-            expect.objectContaining({ role: 'system' }),
-            expect.objectContaining({
-              role: 'user',
-              content: '["WALMART"]',
-            }),
-          ]),
+          model: 'mock-model',
+          system: expect.stringContaining('bank transaction categorizer'),
+          prompt: '["WALMART"]',
+          schema: expect.anything(),
         }),
       );
-    });
-
-    it('returns nulls when parsed JSON is an object without categories key', async () => {
-      mockChatComplete.mockResolvedValue(makeMistralResponse('{"result":"something"}'));
-
-      const result = await service.categorize(['WALMART']);
-
-      // Empty array parsed, count mismatch with input of 1 -> nulls
-      expect(result).toEqual([null]);
     });
 
     it('handles all valid category values', async () => {
@@ -255,7 +166,9 @@ describe('MistralService', () => {
         'other',
       ];
 
-      mockChatComplete.mockResolvedValue(makeMistralResponse(JSON.stringify(allCategories)));
+      mockGenerateObject.mockResolvedValue({
+        object: { categories: allCategories },
+      });
 
       const descriptions = allCategories.map((c) => `desc-for-${c}`);
       const result = await service.categorize(descriptions);
@@ -269,22 +182,22 @@ describe('MistralService', () => {
   // ---------------------------------------------------------------
   describe('chatStream', () => {
     it('throws error when API key not configured', () => {
-      delete process.env.MISTRAL_API_KEY;
-      const service = new MistralService();
+      delete process.env.GROQ_API_KEY;
+      const service = new LlmService();
 
       expect(() =>
         service.chatStream({
           system: 'You are a helper',
           messages: [{ role: 'user', content: 'hello' }] as unknown[],
         }),
-      ).toThrow('Mistral API key not configured');
+      ).toThrow('Groq API key not configured');
     });
 
     it('passes stopWhen directly to streamText', () => {
-      process.env.MISTRAL_API_KEY = 'test-api-key';
+      process.env.GROQ_API_KEY = 'test-api-key';
       mockStreamText.mockReturnValue('stream-result');
 
-      const service = new MistralService();
+      const service = new LlmService();
       const tools = { myTool: {} } as unknown as Record<string, unknown>;
       const messages = [{ role: 'user', content: 'hello' }] as unknown[];
       const stopWhen = ['mock-stop-condition'];
@@ -305,11 +218,11 @@ describe('MistralService', () => {
     });
 
     it('defaults stopWhen to stepCountIs(3) when not provided', () => {
-      process.env.MISTRAL_API_KEY = 'test-api-key';
+      process.env.GROQ_API_KEY = 'test-api-key';
       mockStepCountIs.mockReturnValue('stop-default');
       mockStreamText.mockReturnValue('stream-result');
 
-      const service = new MistralService();
+      const service = new LlmService();
 
       service.chatStream({
         system: 'system prompt',
@@ -325,10 +238,10 @@ describe('MistralService', () => {
     });
 
     it('passes onStepFinish callback when provided', () => {
-      process.env.MISTRAL_API_KEY = 'test-api-key';
+      process.env.GROQ_API_KEY = 'test-api-key';
       mockStreamText.mockReturnValue('stream-result');
 
-      const service = new MistralService();
+      const service = new LlmService();
       const onStepFinish = vi.fn();
 
       service.chatStream({
@@ -347,16 +260,16 @@ describe('MistralService', () => {
 });
 
 describe('decomposeQuery', () => {
-  let service: MistralService;
+  let service: LlmService;
 
   beforeEach(() => {
-    process.env.MISTRAL_API_KEY = 'test-key';
-    service = new MistralService();
+    process.env.GROQ_API_KEY = 'test-key';
+    service = new LlmService();
     mockGenerateObject.mockReset();
   });
 
   afterEach(() => {
-    delete process.env.MISTRAL_API_KEY;
+    delete process.env.GROQ_API_KEY;
   });
 
   it('returns a single sub-query for a simple message', async () => {
@@ -400,8 +313,8 @@ describe('decomposeQuery', () => {
   });
 
   it('returns hybrid fallback when API key is not set', async () => {
-    delete process.env.MISTRAL_API_KEY;
-    const noKeyService = new MistralService();
+    delete process.env.GROQ_API_KEY;
+    const noKeyService = new LlmService();
 
     const message = 'Show me my transactions';
     const result = await noKeyService.decomposeQuery(message);
