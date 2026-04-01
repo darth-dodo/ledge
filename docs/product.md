@@ -12,7 +12,7 @@ Ledger is a personal finance tool that lets you upload bank statements, automati
 
 ## Current Status
 
-**M5 (RAG Chat) is complete.** The full upload-to-chat pipeline is functional: users can upload bank statements, view parsed transactions, and ask natural language questions about their finances. The chat system uses Mistral function calling with three tools (`decompose_query` for adaptive query decomposition into structured sub-queries, `vector_search` for semantic retrieval over statement chunks, and `sql_query` for read-only aggregation queries against the transactions table), SSE streaming for real-time response display, and Markdown rendering. Compound questions (e.g. "How much did I spend on groceries vs dining, AND find any Uber charges?") are decomposed into tagged sub-queries before the agent acts, improving accuracy and tool selection. A settings page lets users select their currency, which persists in localStorage and formats monetary values in chat responses. Test coverage is at 96% (backend) and 95% (frontend) with 302 tests across both. Next milestone is M6 (Full Dashboard) for visual analytics.
+**M5 (RAG Chat) is complete.** The full upload-to-chat pipeline is functional: users can upload bank statements, view parsed transactions, and ask natural language questions about their finances. The chat system uses LLM function calling with three tools (`decompose_query` for adaptive query decomposition into structured sub-queries, `vector_search` for semantic retrieval over statement chunks, and `sql_query` for read-only aggregation queries against the transactions table), SSE streaming for real-time response display, and Markdown rendering. Compound questions (e.g. "How much did I spend on groceries vs dining, AND find any Uber charges?") are decomposed into tagged sub-queries before the agent acts, improving accuracy and tool selection. A settings page lets users select their currency, which persists in localStorage and formats monetary values in chat responses. Test coverage is at 96% (backend) and 95% (frontend) with 302 tests across both. Next milestone is M6 (Full Dashboard) for visual analytics.
 
 ---
 
@@ -72,7 +72,7 @@ flowchart TD
     E --> G[Extract transactions]
     F --> G
     G --> H[Chunk text ~500 tokens]
-    H --> I[Embed via Mistral]
+    H --> I[Embed via Ollama]
     I --> J[Store in PostgreSQL + pgvector]
     J --> K[Redirect to transactions view]
 
@@ -88,7 +88,7 @@ sequenceDiagram
     participant FE as Angular Frontend
     participant BE as NestJS Backend
     participant PG as PostgreSQL + pgvector
-    participant AI as Mistral AI
+    participant AI as Groq LLM
 
     U->>FE: "How much did I spend on food?"
     FE->>BE: POST /chat/sessions/:id/messages { content }
@@ -166,8 +166,8 @@ flowchart TD
 | M0        | Monorepo Scaffold | Complete | pnpm workspace, NestJS + Angular, Docker Compose for PostgreSQL              |
 | M1        | Health Check      | Complete | `/health` endpoint, CI pipeline, basic connectivity                          |
 | M2        | File Upload       | Complete | Drag-and-drop upload, statement entity, file storage                         |
-| M3        | Parse & Persist   | Complete | PDF/CSV parsers (strategy pattern), transactions table, Mistral categories   |
-| M4        | Chunk & Embed     | Complete | Text chunking (~500 tokens), Mistral embeddings, pgvector storage            |
+| M3        | Parse & Persist   | Complete | PDF/CSV parsers (strategy pattern), transactions table, AI categories        |
+| M4        | Chunk & Embed     | Complete | Text chunking (~500 tokens), Ollama embeddings, pgvector storage             |
 | M5        | RAG Chat          | Complete | Session-based chat, SSE streaming, vector_search + sql_query tools, settings |
 | M6        | Groq ZDR + Ollama | Planned  | Migrate to Groq (ZDR) for chat, Ollama for local embeddings                  |
 | M7        | Full Dashboard    | Planned  | Spending summary, category breakdown, monthly trends, daily heatmap          |
@@ -208,8 +208,8 @@ gantt
 | Frontend        | Angular 19 (TypeScript)                  | SPA with components, services, routing                             |
 | Backend         | NestJS (TypeScript)                      | REST API with modules, DI, decorators                              |
 | Database        | PostgreSQL + pgvector                    | Transactions + vector similarity search                            |
-| AI              | Mistral AI                               | Embeddings (mistral-embed) + Chat (mistral-large-latest)           |
-| AI SDK          | Vercel AI SDK (`ai` + `@ai-sdk/mistral`) | Streaming chat completions, tool-calling loop, SSE transport       |
+| AI              | Groq + Ollama                            | LLM (llama-3.3-70b-versatile via Groq) + Embeddings (nomic-embed-text via Ollama) |
+| AI SDK          | Vercel AI SDK (`ai` + `@ai-sdk/groq`)    | Streaming chat completions, tool-calling loop, SSE transport       |
 | File Parsing    | pdf-parse, csv-parse                     | Extract text from bank statements                                  |
 | Markdown        | marked                                   | Render AI chat responses as formatted Markdown (via MarkdownPipe)  |
 | Testing         | Vitest + @vitest/coverage-v8             | Unit/integration tests with V8 coverage (302 tests, 95%+ coverage) |

@@ -1,5 +1,7 @@
 # Milestone 2 → Milestone 3 Handoff
 
+> **Note**: As of M6, the LLM provider was migrated from Mistral to Groq, and embeddings from Mistral Embed to Ollama. See [ADR-005](../adrs/adr-005-groq-ollama-migration.md).
+
 **Project**: Ledger
 **Date**: 2026-03-04
 **Handoff ID**: M2-M3

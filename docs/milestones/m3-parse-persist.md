@@ -1,5 +1,7 @@
 # Milestone 3: Parse & Persist
 
+> **Note**: As of M6, the LLM provider was migrated from Mistral to Groq, and embeddings from Mistral Embed to Ollama. `MistralService` was renamed to `LlmService`. See [ADR-005](../adrs/adr-005-groq-ollama-migration.md).
+
 ## Objective
 
 Implement strategy-pattern parsers for PDF/CSV bank statements, extract and persist transactions with AI-powered categorization via Mistral, and build a filterable Angular transactions view.
