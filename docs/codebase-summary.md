@@ -510,13 +510,13 @@ Coverage thresholds enforced in CI at 85% (backend `vitest.config.ts`).
 
 ## Environment Variables
 
-| Variable          | Required                 | Purpose                              |
-| ----------------- | ------------------------ | ------------------------------------ |
-| `DATABASE_URL`    | Yes                      | PostgreSQL connection string         |
-| `GROQ_API_KEY`    | Yes (for AI features)    | Groq API auth; omit to disable AI    |
-| `OLLAMA_BASE_URL` | No (default `localhost`) | Ollama server URL for embeddings     |
-| `PORT`            | No (default 3000)        | Backend listen port                  |
-| `UPLOAD_DIR`      | No (default `./uploads`) | File storage path                    |
+| Variable          | Required                 | Purpose                           |
+| ----------------- | ------------------------ | --------------------------------- |
+| `DATABASE_URL`    | Yes                      | PostgreSQL connection string      |
+| `GROQ_API_KEY`    | Yes (for AI features)    | Groq API auth; omit to disable AI |
+| `OLLAMA_BASE_URL` | No (default `localhost`) | Ollama server URL for embeddings  |
+| `PORT`            | No (default 3000)        | Backend listen port               |
+| `UPLOAD_DIR`      | No (default `./uploads`) | File storage path                 |
 
 ---
 

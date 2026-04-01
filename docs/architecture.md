@@ -700,18 +700,18 @@ volumes:
 
 ### Backend (NestJS)
 
-| Package                       | Purpose                                  |
-| ----------------------------- | ---------------------------------------- |
-| `@nestjs/core`                | NestJS framework                         |
-| `@nestjs/typeorm` + `typeorm` | ORM + database                           |
-| `pg`                          | PostgreSQL driver                        |
+| Package                       | Purpose                                        |
+| ----------------------------- | ---------------------------------------------- |
+| `@nestjs/core`                | NestJS framework                               |
+| `@nestjs/typeorm` + `typeorm` | ORM + database                                 |
+| `pg`                          | PostgreSQL driver                              |
 | `@ai-sdk/groq`                | Vercel AI SDK Groq provider (chat, categorize) |
 | `ai`                          | Vercel AI SDK (streamText, tool-calling)       |
 | `ollama`                      | Ollama client (local embeddings)               |
-| `zod`                         | Schema validation (tool input schemas)   |
-| `pdf-parse`                   | PDF text extraction                      |
-| `csv-parse`                   | CSV parsing                              |
-| `multer`                      | File upload handling                     |
+| `zod`                         | Schema validation (tool input schemas)         |
+| `pdf-parse`                   | PDF text extraction                            |
+| `csv-parse`                   | CSV parsing                                    |
+| `multer`                      | File upload handling                           |
 
 ### Frontend (Angular)
 

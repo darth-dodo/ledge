@@ -10,12 +10,7 @@ import { LlmModule } from '../llm/llm.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Statement]),
-    TransactionsModule,
-    LlmModule,
-    EmbeddingsModule,
-  ],
+  imports: [TypeOrmModule.forFeature([Statement]), TransactionsModule, LlmModule, EmbeddingsModule],
   controllers: [UploadController],
   providers: [
     UploadService,

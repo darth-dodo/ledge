@@ -203,19 +203,19 @@ gantt
 
 ## 7. Tech Stack
 
-| Layer           | Technology                               | Purpose                                                            |
-| --------------- | ---------------------------------------- | ------------------------------------------------------------------ |
-| Frontend        | Angular 19 (TypeScript)                  | SPA with components, services, routing                             |
-| Backend         | NestJS (TypeScript)                      | REST API with modules, DI, decorators                              |
-| Database        | PostgreSQL + pgvector                    | Transactions + vector similarity search                            |
-| AI              | Groq + Ollama                            | LLM (llama-3.3-70b-versatile via Groq) + Embeddings (nomic-embed-text via Ollama) |
-| AI SDK          | Vercel AI SDK (`ai` + `@ai-sdk/groq`)    | Streaming chat completions, tool-calling loop, SSE transport       |
-| File Parsing    | pdf-parse, csv-parse                     | Extract text from bank statements                                  |
-| Markdown        | marked                                   | Render AI chat responses as formatted Markdown (via MarkdownPipe)  |
-| Testing         | Vitest + @vitest/coverage-v8             | Unit/integration tests with V8 coverage (302 tests, 95%+ coverage) |
-| Charts          | Chart.js / ngx-charts (planned M7)       | Dashboard visualizations                                           |
-| Package Manager | pnpm                                     | Fast installs, strict dependency resolution                        |
-| Deployment      | Docker Compose (local)                   | PostgreSQL + pgvector container                                    |
+| Layer           | Technology                            | Purpose                                                                           |
+| --------------- | ------------------------------------- | --------------------------------------------------------------------------------- |
+| Frontend        | Angular 19 (TypeScript)               | SPA with components, services, routing                                            |
+| Backend         | NestJS (TypeScript)                   | REST API with modules, DI, decorators                                             |
+| Database        | PostgreSQL + pgvector                 | Transactions + vector similarity search                                           |
+| AI              | Groq + Ollama                         | LLM (llama-3.3-70b-versatile via Groq) + Embeddings (nomic-embed-text via Ollama) |
+| AI SDK          | Vercel AI SDK (`ai` + `@ai-sdk/groq`) | Streaming chat completions, tool-calling loop, SSE transport                      |
+| File Parsing    | pdf-parse, csv-parse                  | Extract text from bank statements                                                 |
+| Markdown        | marked                                | Render AI chat responses as formatted Markdown (via MarkdownPipe)                 |
+| Testing         | Vitest + @vitest/coverage-v8          | Unit/integration tests with V8 coverage (302 tests, 95%+ coverage)                |
+| Charts          | Chart.js / ngx-charts (planned M7)    | Dashboard visualizations                                                          |
+| Package Manager | pnpm                                  | Fast installs, strict dependency resolution                                       |
+| Deployment      | Docker Compose (local)                | PostgreSQL + pgvector container                                                   |
 
 ---
 
