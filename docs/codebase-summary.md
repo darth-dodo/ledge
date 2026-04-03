@@ -55,7 +55,7 @@ graph TB
 
     subgraph GroqAI ["Groq"]
         CAT[Categorize]
-        LLM[llama-3.3-70b-versatile]
+        LLM[qwen/qwen3-32b]
     end
 
     subgraph OllamaAI ["Ollama"]
@@ -264,7 +264,7 @@ ledger/
 │       ├── shared/           # Pipes (Markdown), Components (FileDropzone)
 │       └── features/         # Pages: Upload, Transactions, Chat, Settings
 ├── docs/                     # Architecture, product, ADRs, plans, milestones
-└── docker-compose.yml        # PostgreSQL + pgvector
+└── docker-compose.yml        # PostgreSQL + pgvector + Ollama
 ```
 
 ---
@@ -323,18 +323,18 @@ Vector search pipeline for semantic queries.
 Single service wrapping Groq via `@ai-sdk/groq`.
 
 - **`llm.service.ts`**
-  - `categorize(descriptions[])` — Batch categorize via `generateObject()` with
-    Zod schema; validates against `VALID_CATEGORIES`; batches at 20
+  - `categorize(descriptions[])` — Batch categorize via `generateText()` +
+    `Output.object()` with Zod schema; validates against `VALID_CATEGORIES`; batches at 20
   - `chatStream(params)` — Vercel AI SDK `streamText()` with tool-calling loop
-    using `llama-3.3-70b-versatile`
-  - `decomposeQuery(message)` — `generateObject()` with Zod schema; classifies
-    intent as `sql_aggregate | sql_filter | vector_search | hybrid`
+    using `qwen/qwen3-32b`
+  - `decomposeQuery(message)` — `generateText()` + `Output.object()` with Zod
+    schema; classifies intent as `sql_aggregate | sql_filter | vector_search | hybrid`
 
 Embeddings are handled separately by `EmbeddingsService` using Ollama
 (`nomic-embed-text`, 768-dim vectors) at `OLLAMA_BASE_URL`.
 
-Requires `GROQ_API_KEY`. Degrades gracefully if not set (categorization
-skipped, chat throws).
+`GROQ_API_KEY` is optional (not required for startup). When absent,
+categorization is skipped and chat throws.
 
 ---
 
@@ -513,7 +513,7 @@ Coverage thresholds enforced in CI at 85% (backend `vitest.config.ts`).
 | Variable          | Required                 | Purpose                           |
 | ----------------- | ------------------------ | --------------------------------- |
 | `DATABASE_URL`    | Yes                      | PostgreSQL connection string      |
-| `GROQ_API_KEY`    | Yes (for AI features)    | Groq API auth; omit to disable AI |
+| `GROQ_API_KEY`    | No (optional)            | Groq API auth; omit to disable AI |
 | `OLLAMA_BASE_URL` | No (default `localhost`) | Ollama server URL for embeddings  |
 | `PORT`            | No (default 3000)        | Backend listen port               |
 | `UPLOAD_DIR`      | No (default `./uploads`) | File storage path                 |
@@ -523,7 +523,7 @@ Coverage thresholds enforced in CI at 85% (backend `vitest.config.ts`).
 ## Running Locally
 
 ```bash
-# 1. Start PostgreSQL with pgvector
+# 1. Start PostgreSQL with pgvector + Ollama
 docker compose up -d
 
 # 2. Install deps

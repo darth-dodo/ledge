@@ -15,7 +15,7 @@
   <img src="https://img.shields.io/badge/Angular-21-DD0031?logo=angular&logoColor=white" alt="Angular">
   <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/PostgreSQL-pgvector-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/Groq-llama--3.3--70b-F55036" alt="Groq">
+  <img src="https://img.shields.io/badge/Groq-qwen3--32b-F55036" alt="Groq">
   <img src="https://img.shields.io/badge/Ollama-nomic--embed--text-1A1A2E" alt="Ollama">
   <img src="https://img.shields.io/badge/Vercel_AI_SDK-v6-000000?logo=vercel&logoColor=white" alt="Vercel AI SDK">
   <img src="https://img.shields.io/badge/ReAct-agent-8B5CF6" alt="ReAct Agent">
@@ -100,7 +100,7 @@ graph TB
     subgraph External ["AI Services"]
         CAT[Categorize]
         EMB["Embed (Ollama)"]
-        LLM["Groq\nllama-3.3-70b-versatile"]
+        LLM["Groq\nqwen/qwen3-32b"]
     end
 
     UP -->|POST /upload| UC
@@ -132,12 +132,16 @@ graph TB
 git clone git@github.com:darth-dodo/ledger.git
 cd ledger && pnpm install
 
-# Start PostgreSQL (with pgvector)
+# Start PostgreSQL (with pgvector) and Ollama
 docker compose up -d
+
+# Pull the embedding model into the Ollama container
+docker exec ledger-ollama-1 ollama pull nomic-embed-text
 
 # Configure environment
 cp backend/.env.example backend/.env
-# Add your GROQ_API_KEY and OLLAMA_BASE_URL to backend/.env
+# Optionally add GROQ_API_KEY to backend/.env (LLM features disabled without it)
+# OLLAMA_BASE_URL defaults to http://localhost:11434
 
 # Start backend (port 3000)
 cd backend && pnpm dev
@@ -210,7 +214,7 @@ ledger/
 │   ├── architecture.md     # System design
 │   ├── adrs/               # Architecture decision records
 │   └── milestones/         # Milestone docs and retros
-└── docker-compose.yml      # PostgreSQL + pgvector
+└── docker-compose.yml      # PostgreSQL + pgvector + Ollama
 ```
 
 ## Documentation

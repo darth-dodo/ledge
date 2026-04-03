@@ -8,10 +8,12 @@ All notable changes to the Ledger project.
 
 ### Changed
 
-- **LLM Provider**: Migrated from Mistral AI to Groq (`llama-3.3-70b-versatile`) for chat streaming, categorization, and query decomposition
+- **LLM Provider**: Migrated from Mistral AI to Groq (`qwen/qwen3-32b`) for chat streaming, categorization, and query decomposition
 - **Embedding Provider**: Migrated from Mistral Embed API to Ollama (`nomic-embed-text`, 768-dim local embeddings)
+- **Ollama Containerized**: Ollama now runs as a Docker Compose service — no local install needed
 - **Service Rename**: `MistralService` → `LlmService`, `src/mistral/` → `src/llm/`
-- **Categorization**: Rewritten to use `generateObject()` with Zod schema instead of raw API parsing
+- **Categorization**: Rewritten to use `generateText()` + `Output.object()` with Zod schema instead of deprecated `generateObject()`
+- **GROQ_API_KEY**: Now optional — app starts without it; LLM features gracefully disabled
 - **Database**: New migration to change pgvector column from 1024 to 768 dimensions
 
 ### Removed

@@ -32,10 +32,11 @@ Default to using Node.js with pnpm.
 
 ### LLM module (`backend/src/llm/`)
 
-- Uses `@ai-sdk/groq` with `generateObject()` and Zod schema for structured output
-- Batch-categorizes transaction descriptions via Groq (`llama-3.3-70b-versatile`)
-- Requires `GROQ_API_KEY` in `.env`; categorization gracefully skips if key is absent
-- Embeddings handled by `EmbeddingsService` using Ollama (`nomic-embed-text`, 768-dim)
+- Uses `@ai-sdk/groq` with `generateText()` + `Output.object()` and Zod schema for structured output (AI SDK v6 pattern; `generateObject()` is deprecated)
+- Provider configured with `structuredOutputs: false` because most Groq models don't support `json_schema` response format — falls back to `json_object` mode
+- Batch-categorizes transaction descriptions via Groq (`qwen/qwen3-32b`)
+- `GROQ_API_KEY` is optional in `.env` — app starts without it, LLM features (categorization, chat) are disabled
+- Embeddings handled by `EmbeddingsService` using Ollama (`nomic-embed-text`, 768-dim); Ollama runs as a Docker Compose service
 
 ### Parser strategy (`backend/src/upload/parsers/`)
 
@@ -65,4 +66,4 @@ Default to using Node.js with pnpm.
 ### LLM service additions
 
 - `chatStream()` method added alongside existing `categorize()` — uses `streamText()` via Groq with `stopWhen: stepCountIs(n)` for multi-step tool calling
-- `decomposeQuery()` method — uses `generateObject` with a Zod schema to decompose a user message into `SubQuery[]` with intent tags; called by the `decompose_query` tool on every chat message
+- `decomposeQuery()` method — uses `generateText` + `Output.object` with a Zod schema to decompose a user message into `SubQuery[]` with intent tags; called by the `decompose_query` tool on every chat message

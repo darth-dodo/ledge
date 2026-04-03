@@ -24,22 +24,24 @@ Key constraints:
 
 ### 1. Groq for LLM Inference
 
-**Choice**: Groq (`llama-3.3-70b-versatile`) via `@ai-sdk/groq`
+**Choice**: Groq (`qwen/qwen3-32b`) via `@ai-sdk/groq`
 
 **Alternatives considered**:
 
 - **Keep Mistral**: No Zero Data Retention guarantee — Mistral's data policy does not explicitly prevent storage or training on API inputs, which is unacceptable for sensitive financial data
 - **OpenAI**: Higher cost per token, and while they offer data use opt-out, Groq's ZDR is a stronger contractual guarantee
-- **Local LLM via Ollama**: Insufficient quality for agentic tool-calling loops on consumer hardware — Llama 3.3 70B requires ~40GB VRAM
+- **Local LLM via Ollama**: Insufficient quality for agentic tool-calling loops on consumer hardware — large models require significant VRAM
 
-**Rationale**: Groq's **Zero Data Retention policy** is the primary driver — no user financial data is stored, logged, or used for training by the LLM provider. This is critical for a finance app handling real bank statements. Secondary benefits include fastest inference for open-weight models (Groq's LPU hardware) and a trivial migration path via the Vercel AI SDK (`createMistral()` → `createGroq()` with identical interfaces). Llama 3.3 70B has strong tool-calling capabilities needed for the ReAct agent loop.
+**Rationale**: Groq's **Zero Data Retention policy** is the primary driver — no user financial data is stored, logged, or used for training by the LLM provider. This is critical for a finance app handling real bank statements. Secondary benefits include fastest inference for open-weight models (Groq's LPU hardware) and a trivial migration path via the Vercel AI SDK (`createMistral()` → `createGroq()` with identical interfaces). Qwen3-32B offers strong tool-calling capabilities needed for the ReAct agent loop at a good cost-quality tradeoff.
 
 **Implementation**:
 
-- `LlmService` (renamed from `MistralService`) uses `createGroq({ apiKey })('llama-3.3-70b-versatile')`
+- `LlmService` (renamed from `MistralService`) uses `createGroq({ apiKey })('qwen/qwen3-32b')`
+- Groq provider configured with `structuredOutputs: false` — most Groq models (including Qwen3) don't support the `json_schema` response format, so the AI SDK falls back to `json_object` mode
+- `GROQ_API_KEY` is optional — the app starts without it, and LLM features (categorization, chat) are gracefully disabled
 - `chatStream()`: unchanged interface, swapped provider
-- `categorize()`: rewritten from raw `chat.complete()` to `generateObject()` with Zod schema — cleaner, provider-agnostic
-- `decomposeQuery()`: unchanged interface, swapped provider
+- `categorize()` and `decomposeQuery()`: rewritten from deprecated `generateObject()` to `generateText()` + `Output.object()` with Zod schema — the AI SDK v6 recommended pattern for structured output
+- Ollama runs as a Docker Compose service with volume persistence (`ollama_data`) and a healthcheck; the `nomic-embed-text` model must be pulled after first start: `docker exec ledger-ollama-1 ollama pull nomic-embed-text`
 
 ### 2. Ollama for Local Embeddings
 
@@ -66,11 +68,11 @@ Key constraints:
 
 **Rationale**: The service is now provider-agnostic (uses Vercel AI SDK abstractions). Naming it `LlmService` allows future provider swaps without another rename. The embeddings concern is already separated into `EmbeddingsService`.
 
-### 4. Structured Categorization via generateObject
+### 4. Structured Output via generateText + Output.object
 
-**Choice**: Replace raw `chat.complete()` JSON parsing with `generateObject()` + Zod schema
+**Choice**: Replace raw `chat.complete()` JSON parsing with `generateText()` + `Output.object()` + Zod schema (AI SDK v6 pattern)
 
-**Rationale**: The old approach required parsing flexible JSON formats (bare arrays, wrapped objects, objects with category properties). Using `generateObject()` with a `z.object({ categories: z.array(z.string()) })` schema guarantees structured output, eliminating an entire class of parsing bugs.
+**Rationale**: The old approach required parsing flexible JSON formats (bare arrays, wrapped objects, objects with category properties). Using `generateText()` with `Output.object({ schema })` and a `z.object({ categories: z.array(z.string()) })` schema guarantees structured output, eliminating an entire class of parsing bugs. The `generateObject()` API is deprecated in AI SDK v6 in favor of this approach. The Groq provider is configured with `structuredOutputs: false` because most Groq-hosted models do not support the `json_schema` response format — the SDK falls back to `json_object` mode with schema enforcement on the client side.
 
 ---
 
@@ -82,13 +84,15 @@ Key constraints:
 - **Full data sovereignty for embeddings**: All transaction text stays on-premise via Ollama — no cloud API calls for vector generation
 - Zero API cost for embeddings (local Ollama)
 - Faster LLM inference via Groq's LPU hardware
-- Cleaner categorization code (Zod schema vs. manual JSON parsing)
+- Cleaner categorization code (Zod schema via `generateText` + `Output.object` vs. manual JSON parsing)
+- Graceful degradation — app fully functional without `GROQ_API_KEY`, LLM features simply disabled
+- Ollama runs in Docker Compose alongside PostgreSQL — single `docker compose up -d` starts all services
 - Provider-agnostic service naming enables future swaps
 - Single SDK pattern — all LLM calls go through Vercel AI SDK
 
 **Negative**:
 
-- Ollama must be running locally for embeddings (developer setup requirement)
+- Ollama must be running for embeddings (runs via Docker Compose; `nomic-embed-text` model must be pulled after first start)
 - Existing embeddings must be re-generated after migration (dimension change)
 - Two external dependencies instead of one (Groq cloud + Ollama local)
 
@@ -96,7 +100,7 @@ Key constraints:
 
 - **Ollama unavailability**: Mitigated by lazy health check and graceful degradation — uploads succeed without embeddings, vector search disabled until Ollama is available
 - **Groq rate limits**: Free tier has lower limits than Mistral; mitigated by existing batch logic (20 items per categorization call)
-- **Model quality regression**: Llama 3.3 70B tool-calling quality validated against existing ReAct agent patterns; fallback intents preserved in decomposeQuery
+- **Model quality regression**: Qwen3-32B tool-calling quality validated against existing ReAct agent patterns; fallback intents preserved in decomposeQuery
 
 ---
 

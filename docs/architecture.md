@@ -131,7 +131,7 @@ sequenceDiagram
         NestJS->>Groq: streamText() with tools + history (SSE)
         Note over NestJS,Groq: Step 0 — DECOMPOSE
         Groq-->>NestJS: Tool call (decompose_query)
-        NestJS->>Groq: generateObject() → SubQuery[] with intents
+        NestJS->>Groq: generateText() + Output.object() → SubQuery[] with intents
         Groq-->>NestJS: SubQuery[] (sql_aggregate | sql_filter | vector_search | hybrid)
         NestJS->>Groq: Tool result (sub-queries)
         loop Up to remaining tool-calling steps
@@ -546,32 +546,34 @@ The project uses **Groq** for LLM inference (chat, categorization, query decompo
 
 Three capabilities via `@ai-sdk/groq`:
 
-**1. Chat Categorization** — batch transaction classification (via Vercel AI SDK `generateObject`)
+**1. Chat Categorization** — batch transaction classification (via Vercel AI SDK `generateText` + `Output.object`)
 
 ```typescript
-// llm.service.ts — uses generateObject() with Zod schema
+// llm.service.ts — uses generateText() + Output.object() with Zod schema
 async categorize(descriptions: string[]): Promise<(string | null)[]> {
-  const { object } = await generateObject({
-    model: this.aiModel,          // createGroq({ apiKey })('llama-3.3-70b-versatile')
-    schema: categorizeSchema,     // Zod schema for { categories: string[] }
+  const { object } = await generateText({
+    model: this.aiModel,          // createGroq({ apiKey })('qwen/qwen3-32b')
+    output: Output.object({ schema: categorizeSchema }),
     prompt: `Categorize these transactions: ${JSON.stringify(descriptions)}`,
   });
   // Validate against VALID_CATEGORIES set
 }
 ```
 
-**2. Query Decomposition** — structured sub-query generation (via Vercel AI SDK `generateObject`)
+**2. Query Decomposition** — structured sub-query generation (via Vercel AI SDK `generateText` + `Output.object`)
 
 ```typescript
-// llm.service.ts — uses generateObject() (non-streaming)
+// llm.service.ts — uses generateText() + Output.object() (non-streaming)
 async decomposeQuery(message: string): Promise<SubQuery[]> {
-  const { object } = await generateObject({
+  const { object } = await generateText({
     model: this.aiModel,
-    schema: z.object({
-      subQueries: z.array(z.object({
-        query: z.string(),
-        intent: z.enum(['sql_aggregate', 'sql_filter', 'vector_search', 'hybrid']),
-      })),
+    output: Output.object({
+      schema: z.object({
+        subQueries: z.array(z.object({
+          query: z.string(),
+          intent: z.enum(['sql_aggregate', 'sql_filter', 'vector_search', 'hybrid']),
+        })),
+      }),
     }),
     prompt: `Decompose this financial question into sub-queries: ${message}`,
   });
@@ -590,7 +592,7 @@ chatStream(params: {
   maxSteps?: number;
 }): ReturnType<typeof streamText> {
   return streamText({
-    model: this.aiModel,          // createGroq({ apiKey })('llama-3.3-70b-versatile')
+    model: this.aiModel,          // createGroq({ apiKey })('qwen/qwen3-32b')
     system: params.system,
     messages: params.messages,
     tools: params.tools,
@@ -611,7 +613,7 @@ async getEmbeddings(texts: string[]): Promise<number[][]> {
 }
 ```
 
-The `LlmService` requires `GROQ_API_KEY` and gracefully degrades when not set (categorization skipped, chat throws). The `EmbeddingsService` requires `OLLAMA_BASE_URL` (defaults to `http://localhost:11434`) for local embedding generation.
+The `LlmService` uses `GROQ_API_KEY` (optional — not required for startup). When the key is absent, categorization is skipped and chat throws. The `EmbeddingsService` requires `OLLAMA_BASE_URL` (defaults to `http://localhost:11434`) for local embedding generation.
 
 ---
 
@@ -690,8 +692,21 @@ services:
     volumes:
       - pgdata:/var/lib/postgresql/data
 
+  ollama:
+    image: ollama/ollama:latest
+    ports:
+      - '11434:11434'
+    volumes:
+      - ollama:/root/.ollama
+    healthcheck:
+      test: ['CMD', 'ollama', 'list']
+      interval: 30s
+      timeout: 10s
+      retries: 3
+
 volumes:
   pgdata:
+  ollama:
 ```
 
 ---
