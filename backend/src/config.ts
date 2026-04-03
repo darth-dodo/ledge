@@ -2,7 +2,7 @@ export interface AppConfig {
   port: number;
   nodeEnv: string;
   databaseUrl: string;
-  groqApiKey: string;
+  groqApiKey: string | undefined;
   jwtSecret: string;
   uploadDir: string;
   logLevel: string;
@@ -17,7 +17,6 @@ export function loadConfig(): AppConfig {
   const jwtSecret = process.env.JWT_SECRET;
 
   if (!databaseUrl) missing.push('DATABASE_URL');
-  if (!groqApiKey) missing.push('GROQ_API_KEY');
   if (!jwtSecret) missing.push('JWT_SECRET');
 
   if (missing.length > 0) {
@@ -28,7 +27,7 @@ export function loadConfig(): AppConfig {
     port: Number(process.env.PORT ?? 3000),
     nodeEnv: process.env.NODE_ENV ?? 'development',
     databaseUrl: databaseUrl!,
-    groqApiKey: groqApiKey!,
+    groqApiKey: groqApiKey,
     jwtSecret: jwtSecret!,
     uploadDir: process.env.UPLOAD_DIR ?? './uploads',
     logLevel: process.env.LOG_LEVEL ?? 'info',

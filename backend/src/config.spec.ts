@@ -3,7 +3,6 @@ import { loadConfig } from './config';
 
 const REQUIRED_VARS = {
   DATABASE_URL: 'postgresql://test:test@localhost:5432/test',
-  GROQ_API_KEY: 'test-groq-key',
   JWT_SECRET: 'test-jwt-secret',
 };
 
@@ -54,16 +53,14 @@ describe('loadConfig', () => {
     const config = loadConfig();
 
     expect(config.databaseUrl).toBe(REQUIRED_VARS.DATABASE_URL);
-    expect(config.groqApiKey).toBe(REQUIRED_VARS.GROQ_API_KEY);
     expect(config.jwtSecret).toBe(REQUIRED_VARS.JWT_SECRET);
   });
 
   test('throws when all required vars are missing', () => {
     delete process.env.DATABASE_URL;
-    delete process.env.GROQ_API_KEY;
     delete process.env.JWT_SECRET;
 
-    expect(() => loadConfig()).toThrow('DATABASE_URL, GROQ_API_KEY, JWT_SECRET');
+    expect(() => loadConfig()).toThrow('DATABASE_URL, JWT_SECRET');
   });
 
   test('throws when a single required var is missing', () => {
