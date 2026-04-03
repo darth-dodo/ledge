@@ -4,11 +4,11 @@ import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
 // Hoisted mock variables (available inside vi.mock factories)
 // ---------------------------------------------------------------------------
 
-const { mockStreamText, mockStepCountIs, mockCreateGroq, mockGenerateObject } = vi.hoisted(() => ({
+const { mockStreamText, mockStepCountIs, mockCreateGroq, mockGenerateText } = vi.hoisted(() => ({
   mockStreamText: vi.fn(),
   mockStepCountIs: vi.fn(),
   mockCreateGroq: vi.fn(),
-  mockGenerateObject: vi.fn(),
+  mockGenerateText: vi.fn(),
 }));
 
 // ---------------------------------------------------------------------------
@@ -25,7 +25,8 @@ vi.mock('@ai-sdk/groq', () => ({
 vi.mock('ai', () => ({
   streamText: mockStreamText,
   stepCountIs: mockStepCountIs,
-  generateObject: mockGenerateObject,
+  generateText: mockGenerateText,
+  Output: { object: (opts: unknown) => opts },
 }));
 
 import { LlmService } from './llm.service.js';
@@ -62,7 +63,7 @@ describe('LlmService', () => {
       const result = await service.categorize(['Coffee', 'Rent', 'Netflix']);
 
       expect(result).toEqual([null, null, null]);
-      expect(mockGenerateObject).not.toHaveBeenCalled();
+      expect(mockGenerateText).not.toHaveBeenCalled();
     });
   });
 
@@ -81,12 +82,12 @@ describe('LlmService', () => {
       const result = await service.categorize([]);
 
       expect(result).toEqual([]);
-      expect(mockGenerateObject).not.toHaveBeenCalled();
+      expect(mockGenerateText).not.toHaveBeenCalled();
     });
 
-    it('parses valid category response from generateObject', async () => {
-      mockGenerateObject.mockResolvedValue({
-        object: { categories: ['groceries', 'dining', 'transport'] },
+    it('parses valid category response from generateText', async () => {
+      mockGenerateText.mockResolvedValue({
+        output: { categories: ['groceries', 'dining', 'transport'] },
       });
 
       const result = await service.categorize(['WALMART GROCERY', 'PIZZA HUT', 'UBER TRIP']);
@@ -95,8 +96,8 @@ describe('LlmService', () => {
     });
 
     it('returns nulls when response count mismatches input count', async () => {
-      mockGenerateObject.mockResolvedValue({
-        object: { categories: ['groceries', 'dining'] },
+      mockGenerateText.mockResolvedValue({
+        output: { categories: ['groceries', 'dining'] },
       });
 
       // Sending 3 descriptions but response only has 2
@@ -106,7 +107,7 @@ describe('LlmService', () => {
     });
 
     it('returns nulls on error', async () => {
-      mockGenerateObject.mockRejectedValue(new Error('Network timeout'));
+      mockGenerateText.mockRejectedValue(new Error('Network timeout'));
 
       const result = await service.categorize(['WALMART', 'UBER']);
 
@@ -114,8 +115,8 @@ describe('LlmService', () => {
     });
 
     it('validates categories against the allowed set', async () => {
-      mockGenerateObject.mockResolvedValue({
-        object: { categories: ['groceries', 'INVALID_CATEGORY', 'dining'] },
+      mockGenerateText.mockResolvedValue({
+        output: { categories: ['groceries', 'INVALID_CATEGORY', 'dining'] },
       });
 
       const result = await service.categorize(['WALMART', 'UNKNOWN', 'PIZZA HUT']);
@@ -124,8 +125,8 @@ describe('LlmService', () => {
     });
 
     it('normalizes category casing to lowercase', async () => {
-      mockGenerateObject.mockResolvedValue({
-        object: { categories: ['Groceries', 'DINING', 'Transport'] },
+      mockGenerateText.mockResolvedValue({
+        output: { categories: ['Groceries', 'DINING', 'Transport'] },
       });
 
       const result = await service.categorize(['WALMART', 'PIZZA HUT', 'UBER']);
@@ -133,19 +134,19 @@ describe('LlmService', () => {
       expect(result).toEqual(['groceries', 'dining', 'transport']);
     });
 
-    it('sends the correct schema and prompt to generateObject', async () => {
-      mockGenerateObject.mockResolvedValue({
-        object: { categories: ['groceries'] },
+    it('sends the correct output schema and prompt to generateText', async () => {
+      mockGenerateText.mockResolvedValue({
+        output: { categories: ['groceries'] },
       });
 
       await service.categorize(['WALMART']);
 
-      expect(mockGenerateObject).toHaveBeenCalledWith(
+      expect(mockGenerateText).toHaveBeenCalledWith(
         expect.objectContaining({
           model: 'mock-model',
           system: expect.stringContaining('bank transaction categorizer'),
           prompt: '["WALMART"]',
-          schema: expect.anything(),
+          output: expect.anything(),
         }),
       );
     });
@@ -166,8 +167,8 @@ describe('LlmService', () => {
         'other',
       ];
 
-      mockGenerateObject.mockResolvedValue({
-        object: { categories: allCategories },
+      mockGenerateText.mockResolvedValue({
+        output: { categories: allCategories },
       });
 
       const descriptions = allCategories.map((c) => `desc-for-${c}`);
@@ -265,7 +266,7 @@ describe('decomposeQuery', () => {
   beforeEach(() => {
     process.env.GROQ_API_KEY = 'test-key';
     service = new LlmService();
-    mockGenerateObject.mockReset();
+    mockGenerateText.mockReset();
   });
 
   afterEach(() => {
@@ -273,8 +274,8 @@ describe('decomposeQuery', () => {
   });
 
   it('returns a single sub-query for a simple message', async () => {
-    mockGenerateObject.mockResolvedValue({
-      object: {
+    mockGenerateText.mockResolvedValue({
+      output: {
         subQueries: [{ query: 'total spend last month', intent: 'sql_aggregate' }],
       },
     });
@@ -285,8 +286,8 @@ describe('decomposeQuery', () => {
   });
 
   it('returns multiple sub-queries for a compound message', async () => {
-    mockGenerateObject.mockResolvedValue({
-      object: {
+    mockGenerateText.mockResolvedValue({
+      output: {
         subQueries: [
           { query: 'total groceries last month', intent: 'sql_aggregate' },
           { query: 'total dining last month', intent: 'sql_aggregate' },
@@ -303,8 +304,8 @@ describe('decomposeQuery', () => {
     expect(result[2].intent).toBe('vector_search');
   });
 
-  it('falls back to hybrid intent when generateObject throws', async () => {
-    mockGenerateObject.mockRejectedValue(new Error('API error'));
+  it('falls back to hybrid intent when generateText throws', async () => {
+    mockGenerateText.mockRejectedValue(new Error('API error'));
 
     const message = 'What are my biggest expenses?';
     const result = await service.decomposeQuery(message);

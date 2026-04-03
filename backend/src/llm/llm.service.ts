@@ -1,8 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { createGroq } from '@ai-sdk/groq';
+import { createGroq, type GroqLanguageModelOptions } from '@ai-sdk/groq';
 import {
   streamText,
-  generateObject,
+  generateText,
+  Output,
   stepCountIs,
   type ModelMessage,
   type ToolSet,
@@ -30,7 +31,7 @@ export class LlmService {
       this.logger.warn('GROQ_API_KEY not set — LLM features will be disabled');
       this.aiModel = null;
     } else {
-      this.aiModel = createGroq({ apiKey })('llama-3.3-70b-versatile');
+      this.aiModel = createGroq({ apiKey })('qwen/qwen3-32b');
     }
   }
 
@@ -56,16 +57,21 @@ export class LlmService {
 
   private async categorizeBatch(descriptions: string[]): Promise<(string | null)[]> {
     try {
-      const { object } = await generateObject({
+      const { output } = await generateText({
         model: this.aiModel!,
         system: SYSTEM_PROMPT,
         prompt: JSON.stringify(descriptions),
-        schema: z.object({
-          categories: z.array(z.string()),
+        providerOptions: {
+          groq: { structuredOutputs: false } satisfies GroqLanguageModelOptions,
+        },
+        output: Output.object({
+          schema: z.object({
+            categories: z.array(z.string()),
+          }),
         }),
       });
 
-      const categories = object.categories;
+      const categories = output!.categories;
 
       if (categories.length !== descriptions.length) {
         this.logger.warn(
@@ -127,20 +133,25 @@ Decompose the user's question into independent sub-queries. For each sub-query, 
 If the query is simple and doesn't need decomposition, return it as a single sub-query.`;
 
     try {
-      const { object } = await generateObject({
+      const { output } = await generateText({
         model: this.aiModel,
         system: DECOMPOSE_SYSTEM,
         prompt: message,
-        schema: z.object({
-          subQueries: z.array(
-            z.object({
-              query: z.string(),
-              intent: z.enum(['sql_aggregate', 'sql_filter', 'vector_search', 'hybrid']),
-            }),
-          ),
+        providerOptions: {
+          groq: { structuredOutputs: false } satisfies GroqLanguageModelOptions,
+        },
+        output: Output.object({
+          schema: z.object({
+            subQueries: z.array(
+              z.object({
+                query: z.string(),
+                intent: z.enum(['sql_aggregate', 'sql_filter', 'vector_search', 'hybrid']),
+              }),
+            ),
+          }),
         }),
       });
-      return object.subQueries;
+      return output!.subQueries;
     } catch (err) {
       this.logger.warn(
         `Query decomposition failed, falling back to hybrid: ${err instanceof Error ? err.message : String(err)}`,
