@@ -1,14 +1,17 @@
 import { Inject, Injectable, Logger } from '@nestjs/common';
 import { InjectRepository } from '@nestjs/typeorm';
 import { Repository, DataSource } from 'typeorm';
-import { Mistral } from '@mistralai/mistralai';
+import { Ollama } from 'ollama';
 import { Embedding } from './entities/embedding.entity';
 import { ChunkerService } from './chunker.service';
+
+const EMBEDDING_MODEL = 'nomic-embed-text';
 
 @Injectable()
 export class EmbeddingsService {
   private readonly logger = new Logger(EmbeddingsService.name);
-  private readonly client: Mistral | null;
+  private readonly client: Ollama;
+  private ollamaAvailable: boolean | null = null;
 
   constructor(
     @InjectRepository(Embedding)
@@ -18,18 +21,28 @@ export class EmbeddingsService {
     @Inject(DataSource)
     private readonly dataSource: DataSource,
   ) {
-    const apiKey = process.env.MISTRAL_API_KEY;
-    if (!apiKey) {
-      this.logger.warn('MISTRAL_API_KEY not set — embeddings will be disabled');
-      this.client = null;
-    } else {
-      this.client = new Mistral({ apiKey });
+    const host = process.env.OLLAMA_BASE_URL || 'http://localhost:11434';
+    this.client = new Ollama({ host });
+  }
+
+  private async checkAvailability(): Promise<boolean> {
+    if (this.ollamaAvailable !== null) return this.ollamaAvailable;
+
+    try {
+      await this.client.list();
+      this.ollamaAvailable = true;
+      this.logger.log('Ollama connection established');
+    } catch {
+      this.ollamaAvailable = false;
+      this.logger.warn('Ollama not available — embeddings will be disabled');
     }
+    return this.ollamaAvailable;
   }
 
   async embedStatement(statementId: string, rawText: string): Promise<void> {
-    if (!this.client) {
-      this.logger.warn('Skipping embedding — Mistral client not available');
+    const available = await this.checkAvailability();
+    if (!available) {
+      this.logger.warn('Skipping embedding — Ollama not available');
       return;
     }
 
@@ -45,7 +58,7 @@ export class EmbeddingsService {
     const chunks = this.chunkerService.chunk(rawText);
     if (chunks.length === 0) return;
 
-    // Get embeddings from Mistral
+    // Get embeddings from Ollama
     const vectors = await this.getEmbeddings(chunks.map((c) => c.content));
     if (!vectors) return;
 
@@ -103,15 +116,16 @@ export class EmbeddingsService {
   }
 
   async getEmbeddings(texts: string[]): Promise<number[][] | null> {
-    if (!this.client || texts.length === 0) return null;
+    const available = await this.checkAvailability();
+    if (!available || texts.length === 0) return null;
 
     try {
-      const response = await this.client.embeddings.create({
-        model: 'mistral-embed',
-        inputs: texts,
+      const response = await this.client.embed({
+        model: EMBEDDING_MODEL,
+        input: texts,
       });
 
-      return response.data.map((d) => d.embedding as number[]);
+      return response.embeddings;
     } catch (error) {
       this.logger.error(
         `Embedding failed: ${error instanceof Error ? error.message : String(error)}`,

@@ -1,6 +1,8 @@
 # Ledger — Project Board
 
 > Persistent task tracker across sessions. Updated by each session's agent.
+>
+> **Note**: As of M6, the LLM provider was migrated from Mistral to Groq, and embeddings from Mistral Embed to Ollama. Historical references to Mistral below reflect the original implementation.
 
 ---
 

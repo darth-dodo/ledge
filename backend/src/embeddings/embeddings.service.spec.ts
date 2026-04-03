@@ -1,16 +1,16 @@
-import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest';
+import { describe, it, expect, vi, beforeEach } from 'vitest';
 
 // ---------------------------------------------------------------------------
-// Mock the @mistralai/mistralai module
+// Mock the ollama module
 // ---------------------------------------------------------------------------
 
-const mockEmbeddingsCreate = vi.fn();
+const mockEmbed = vi.fn();
+const mockList = vi.fn();
 
-vi.mock('@mistralai/mistralai', () => ({
-  Mistral: vi.fn().mockImplementation(() => ({
-    embeddings: {
-      create: mockEmbeddingsCreate,
-    },
+vi.mock('ollama', () => ({
+  Ollama: vi.fn().mockImplementation(() => ({
+    embed: mockEmbed,
+    list: mockList,
   })),
 }));
 
@@ -50,12 +50,9 @@ function makeMockChunkerService() {
   };
 }
 
-function makeEmbeddingResponse(count = 1) {
+function makeOllamaEmbedResponse(count = 1) {
   return {
-    data: Array.from({ length: count }, () => ({
-      embedding: new Array(1024).fill(0.1),
-    })),
-    usage: { totalTokens: 10 * count },
+    embeddings: Array.from({ length: count }, () => new Array(1024).fill(0.1)),
   };
 }
 
@@ -64,19 +61,10 @@ function makeEmbeddingResponse(count = 1) {
 // ---------------------------------------------------------------------------
 
 describe('EmbeddingsService', () => {
-  let originalApiKey: string | undefined;
-
   beforeEach(() => {
-    originalApiKey = process.env.MISTRAL_API_KEY;
     vi.clearAllMocks();
-  });
-
-  afterEach(() => {
-    if (originalApiKey !== undefined) {
-      process.env.MISTRAL_API_KEY = originalApiKey;
-    } else {
-      delete process.env.MISTRAL_API_KEY;
-    }
+    // By default, Ollama is available
+    mockList.mockResolvedValue({ models: [] });
   });
 
   // Helper to instantiate the service with mocks
@@ -96,16 +84,16 @@ describe('EmbeddingsService', () => {
   }
 
   // -----------------------------------------------------------------
-  // embedStatement — no API key
+  // embedStatement — Ollama not available
   // -----------------------------------------------------------------
-  describe('embedStatement — no API key', () => {
-    it('logs warning and returns without calling Mistral', async () => {
-      delete process.env.MISTRAL_API_KEY;
+  describe('embedStatement — Ollama not available', () => {
+    it('logs warning and returns without calling embed', async () => {
+      mockList.mockRejectedValue(new Error('Connection refused'));
       const { service, repo } = createService();
 
       await service.embedStatement('stmt-1', 'some text');
 
-      expect(mockEmbeddingsCreate).not.toHaveBeenCalled();
+      expect(mockEmbed).not.toHaveBeenCalled();
       expect(repo.save).not.toHaveBeenCalled();
     });
   });
@@ -115,17 +103,15 @@ describe('EmbeddingsService', () => {
   // -----------------------------------------------------------------
   describe('embedStatement — empty text', () => {
     it('returns early for empty string', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
       const { service, repo } = createService();
 
       await service.embedStatement('stmt-1', '');
 
       expect(repo.save).not.toHaveBeenCalled();
-      expect(mockEmbeddingsCreate).not.toHaveBeenCalled();
+      expect(mockEmbed).not.toHaveBeenCalled();
     });
 
     it('returns early for null text', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
       const { service, repo } = createService();
 
       await service.embedStatement('stmt-1', null as unknown as string);
@@ -134,7 +120,6 @@ describe('EmbeddingsService', () => {
     });
 
     it('returns early for whitespace-only text', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
       const { service, repo } = createService();
 
       await service.embedStatement('stmt-1', '   \n  ');
@@ -147,9 +132,8 @@ describe('EmbeddingsService', () => {
   // embedStatement — happy path
   // -----------------------------------------------------------------
   describe('embedStatement — happy path', () => {
-    it('chunks text, calls Mistral embed API, and saves to DB with raw SQL for vectors', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
-      mockEmbeddingsCreate.mockResolvedValue(makeEmbeddingResponse(2));
+    it('chunks text, calls Ollama embed API, and saves to DB with raw SQL for vectors', async () => {
+      mockEmbed.mockResolvedValue(makeOllamaEmbedResponse(2));
 
       const { service, repo, chunker, dataSource } = createService();
 
@@ -158,10 +142,10 @@ describe('EmbeddingsService', () => {
       // 1. Chunks the text
       expect(chunker.chunk).toHaveBeenCalledWith('Some long text for embedding');
 
-      // 2. Calls Mistral embeddings API
-      expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-        model: 'mistral-embed',
-        inputs: ['chunk one', 'chunk two'],
+      // 2. Calls Ollama embeddings API
+      expect(mockEmbed).toHaveBeenCalledWith({
+        model: 'nomic-embed-text',
+        input: ['chunk one', 'chunk two'],
       });
 
       // 3. Saves each chunk to DB
@@ -177,8 +161,7 @@ describe('EmbeddingsService', () => {
     });
 
     it('passes correct statementId and chunk data to repo.create', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
-      mockEmbeddingsCreate.mockResolvedValue(makeEmbeddingResponse(2));
+      mockEmbed.mockResolvedValue(makeOllamaEmbedResponse(2));
 
       const { service, repo } = createService();
 
@@ -204,8 +187,7 @@ describe('EmbeddingsService', () => {
   // -----------------------------------------------------------------
   describe('embedStatement — idempotency', () => {
     it('calls removeByStatement (deletes existing) before creating new embeddings', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
-      mockEmbeddingsCreate.mockResolvedValue(makeEmbeddingResponse(2));
+      mockEmbed.mockResolvedValue(makeOllamaEmbedResponse(2));
 
       const { service, repo } = createService();
 
@@ -220,12 +202,11 @@ describe('EmbeddingsService', () => {
   });
 
   // -----------------------------------------------------------------
-  // embedStatement — Mistral API failure
+  // embedStatement — Ollama API failure
   // -----------------------------------------------------------------
-  describe('embedStatement — Mistral API failure', () => {
+  describe('embedStatement — Ollama API failure', () => {
     it('handles API error gracefully without crashing', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
-      mockEmbeddingsCreate.mockRejectedValue(new Error('API rate limit'));
+      mockEmbed.mockRejectedValue(new Error('API rate limit'));
 
       const { service, repo } = createService();
 
@@ -241,24 +222,25 @@ describe('EmbeddingsService', () => {
   // getEmbeddings
   // -----------------------------------------------------------------
   describe('getEmbeddings', () => {
-    it('calls client.embeddings.create with correct model and inputs', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
-      mockEmbeddingsCreate.mockResolvedValue(makeEmbeddingResponse(2));
+    it('calls client.embed with correct model and input', async () => {
+      mockEmbed.mockResolvedValue(makeOllamaEmbedResponse(2));
 
       const { service } = createService();
 
       await service.getEmbeddings(['hello', 'world']);
 
-      expect(mockEmbeddingsCreate).toHaveBeenCalledWith({
-        model: 'mistral-embed',
-        inputs: ['hello', 'world'],
+      expect(mockEmbed).toHaveBeenCalledWith({
+        model: 'nomic-embed-text',
+        input: ['hello', 'world'],
       });
     });
 
     it('returns vectors from the response', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
-      mockEmbeddingsCreate.mockResolvedValue({
-        data: [{ embedding: [0.1, 0.2, 0.3] }, { embedding: [0.4, 0.5, 0.6] }],
+      mockEmbed.mockResolvedValue({
+        embeddings: [
+          [0.1, 0.2, 0.3],
+          [0.4, 0.5, 0.6],
+        ],
       });
 
       const { service } = createService();
@@ -270,18 +252,17 @@ describe('EmbeddingsService', () => {
       ]);
     });
 
-    it('returns null when client is not available', async () => {
-      delete process.env.MISTRAL_API_KEY;
+    it('returns null when Ollama is not available', async () => {
+      mockList.mockRejectedValue(new Error('Connection refused'));
       const { service } = createService();
 
       const result = await service.getEmbeddings(['hello']);
 
       expect(result).toBeNull();
-      expect(mockEmbeddingsCreate).not.toHaveBeenCalled();
+      expect(mockEmbed).not.toHaveBeenCalled();
     });
 
     it('returns null for empty inputs array', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
       const { service } = createService();
 
       const result = await service.getEmbeddings([]);
@@ -290,8 +271,7 @@ describe('EmbeddingsService', () => {
     });
 
     it('returns null on API error', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
-      mockEmbeddingsCreate.mockRejectedValue(new Error('Server error'));
+      mockEmbed.mockRejectedValue(new Error('Server error'));
 
       const { service } = createService();
       const result = await service.getEmbeddings(['hello']);
@@ -305,9 +285,8 @@ describe('EmbeddingsService', () => {
   // -----------------------------------------------------------------
   describe('getQueryEmbedding', () => {
     it('returns the first vector from getEmbeddings result', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
-      mockEmbeddingsCreate.mockResolvedValue({
-        data: [{ embedding: [0.1, 0.2, 0.3] }],
+      mockEmbed.mockResolvedValue({
+        embeddings: [[0.1, 0.2, 0.3]],
       });
 
       const { service } = createService();
@@ -317,7 +296,7 @@ describe('EmbeddingsService', () => {
     });
 
     it('returns null when getEmbeddings returns null', async () => {
-      delete process.env.MISTRAL_API_KEY;
+      mockList.mockRejectedValue(new Error('Connection refused'));
       const { service } = createService();
 
       const result = await service.getQueryEmbedding('query');
@@ -331,7 +310,6 @@ describe('EmbeddingsService', () => {
   // -----------------------------------------------------------------
   describe('similaritySearch', () => {
     it('executes correct SQL with vector parameter and limit', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
       const mockResults = [{ id: '1', content: 'match', statementId: 'stmt-1', distance: 0.1 }];
       const { service, dataSource } = createService();
       dataSource.query.mockResolvedValue(mockResults);
@@ -347,7 +325,6 @@ describe('EmbeddingsService', () => {
     });
 
     it('uses default limit of 5', async () => {
-      process.env.MISTRAL_API_KEY = 'test-key';
       const { service, dataSource } = createService();
 
       await service.similaritySearch([0.1]);

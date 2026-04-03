@@ -1,5 +1,7 @@
 # ReAct Agentic RAG Design
 
+> **Note**: As of M6, the LLM provider was migrated from Mistral to Groq (`llama-3.3-70b-versatile`), and embeddings from Mistral Embed to Ollama (`nomic-embed-text`). `MistralService` was renamed to `LlmService`. See [ADR-005](../adrs/adr-005-groq-ollama-migration.md) for details.
+
 **Date**: 2026-03-12
 **Status**: Approved
 **Branch**: feat/m5-rag-chat

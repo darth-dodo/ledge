@@ -1,9 +1,9 @@
 import { Injectable, Logger } from '@nestjs/common';
-import { Mistral } from '@mistralai/mistralai';
-import { createMistral } from '@ai-sdk/mistral';
+import { createGroq, type GroqLanguageModelOptions } from '@ai-sdk/groq';
 import {
   streamText,
-  generateObject,
+  generateText,
+  Output,
   stepCountIs,
   type ModelMessage,
   type ToolSet,
@@ -15,31 +15,28 @@ import { VALID_CATEGORIES } from '../shared/categories.js';
 const SYSTEM_PROMPT = `You are a bank transaction categorizer. For each transaction description, assign exactly one category from this list:
 groceries, dining, transport, utilities, entertainment, shopping, health, education, travel, income, transfer, other
 
-Respond with ONLY a JSON array of category strings in the same order as the input descriptions. No explanation, no markdown, just the JSON array.
+Respond with ONLY a JSON object containing a "categories" key with an array of category strings in the same order as the input descriptions. No explanation, no markdown.
 
 Example input: ["WALMART GROCERY", "UBER TRIP", "NETFLIX"]
-Example output: ["groceries","transport","entertainment"]`;
+Example output: {"categories":["groceries","transport","entertainment"]}`;
 
 @Injectable()
-export class MistralService {
-  private readonly logger = new Logger(MistralService.name);
-  private readonly client: Mistral | null;
-  private readonly aiModel: ReturnType<ReturnType<typeof createMistral>> | null;
+export class LlmService {
+  private readonly logger = new Logger(LlmService.name);
+  private readonly aiModel: ReturnType<ReturnType<typeof createGroq>> | null;
 
   constructor() {
-    const apiKey = process.env.MISTRAL_API_KEY;
+    const apiKey = process.env.GROQ_API_KEY;
     if (!apiKey) {
-      this.logger.warn('MISTRAL_API_KEY not set — AI categorization will be disabled');
-      this.client = null;
+      this.logger.warn('GROQ_API_KEY not set — LLM features will be disabled');
       this.aiModel = null;
     } else {
-      this.client = new Mistral({ apiKey });
-      this.aiModel = createMistral({ apiKey })('mistral-large-latest');
+      this.aiModel = createGroq({ apiKey })('qwen/qwen3-32b');
     }
   }
 
   async categorize(descriptions: string[]): Promise<(string | null)[]> {
-    if (!this.client || descriptions.length === 0) {
+    if (!this.aiModel || descriptions.length === 0) {
       return descriptions.map(() => null);
     }
 
@@ -60,60 +57,30 @@ export class MistralService {
 
   private async categorizeBatch(descriptions: string[]): Promise<(string | null)[]> {
     try {
-      const response = await this.client!.chat.complete({
-        model: 'mistral-large-latest',
-        messages: [
-          { role: 'system', content: SYSTEM_PROMPT },
-          {
-            role: 'user',
-            content: JSON.stringify(descriptions),
-          },
-        ],
-        responseFormat: { type: 'json_object' as const },
+      const { output } = await generateText({
+        model: this.aiModel!,
+        system: SYSTEM_PROMPT,
+        prompt: JSON.stringify(descriptions),
+        providerOptions: {
+          groq: { structuredOutputs: false } satisfies GroqLanguageModelOptions,
+        },
+        output: Output.object({
+          schema: z.object({
+            categories: z.array(z.string()),
+          }),
+        }),
       });
 
-      const raw = response.choices?.[0]?.message?.content;
-      if (typeof raw !== 'string') {
-        this.logger.warn('Mistral returned non-string content');
-        return descriptions.map(() => null);
-      }
+      const categories = output!.categories;
 
-      const parsed: unknown = JSON.parse(raw);
-
-      // The response may be:
-      // 1. A bare array of strings: ["groceries", "dining"]
-      // 2. An object wrapping an array: { categories: ["groceries", "dining"] }
-      // 3. An array of objects: [{ category: "groceries" }, ...]
-      let categories: unknown[];
-      if (Array.isArray(parsed)) {
-        categories = parsed;
-      } else if (typeof parsed === 'object' && parsed !== null) {
-        // Find the first array property in the response object
-        const values = Object.values(parsed as Record<string, unknown>);
-        const arr = values.find((v) => Array.isArray(v));
-        categories = Array.isArray(arr) ? arr : [];
-      } else {
-        categories = [];
-      }
-
-      // Normalize: if items are objects with a "category" property, extract it
-      const normalized = categories.map((item) => {
-        if (typeof item === 'string') return item;
-        if (typeof item === 'object' && item !== null) {
-          const obj = item as Record<string, unknown>;
-          return typeof obj.category === 'string' ? obj.category : null;
-        }
-        return null;
-      });
-
-      if (normalized.length !== descriptions.length) {
+      if (categories.length !== descriptions.length) {
         this.logger.warn(
-          `Category count mismatch: expected ${descriptions.length}, got ${normalized.length}`,
+          `Category count mismatch: expected ${descriptions.length}, got ${categories.length}`,
         );
         return descriptions.map(() => null);
       }
 
-      return normalized.map((cat) => {
+      return categories.map((cat) => {
         if (typeof cat === 'string' && VALID_CATEGORIES.has(cat.toLowerCase())) {
           return cat.toLowerCase();
         }
@@ -135,7 +102,7 @@ export class MistralService {
     onStepFinish?: (step: Record<string, unknown>) => void | Promise<void>;
   }): ReturnType<typeof streamText> {
     if (!this.aiModel) {
-      throw new Error('Mistral API key not configured');
+      throw new Error('Groq API key not configured');
     }
 
     return streamText({
@@ -166,20 +133,25 @@ Decompose the user's question into independent sub-queries. For each sub-query, 
 If the query is simple and doesn't need decomposition, return it as a single sub-query.`;
 
     try {
-      const { object } = await generateObject({
+      const { output } = await generateText({
         model: this.aiModel,
         system: DECOMPOSE_SYSTEM,
         prompt: message,
-        schema: z.object({
-          subQueries: z.array(
-            z.object({
-              query: z.string(),
-              intent: z.enum(['sql_aggregate', 'sql_filter', 'vector_search', 'hybrid']),
-            }),
-          ),
+        providerOptions: {
+          groq: { structuredOutputs: false } satisfies GroqLanguageModelOptions,
+        },
+        output: Output.object({
+          schema: z.object({
+            subQueries: z.array(
+              z.object({
+                query: z.string(),
+                intent: z.enum(['sql_aggregate', 'sql_filter', 'vector_search', 'hybrid']),
+              }),
+            ),
+          }),
         }),
       });
-      return object.subQueries;
+      return output!.subQueries;
     } catch (err) {
       this.logger.warn(
         `Query decomposition failed, falling back to hybrid: ${err instanceof Error ? err.message : String(err)}`,

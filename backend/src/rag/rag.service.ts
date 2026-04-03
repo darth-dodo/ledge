@@ -6,7 +6,7 @@ import { hasToolCall, stepCountIs } from 'ai';
 import { ChatSession } from './entities/chat-session.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { EmbeddingsService } from '../embeddings/embeddings.service';
-import { MistralService } from '../mistral/mistral.service';
+import { LlmService } from '../llm/llm.service';
 import { createVectorSearchTool } from './tools/vector-search.tool';
 import { createSqlQueryTool } from './tools/sql-query.tool';
 import { createThinkTool } from './tools/think.tool';
@@ -75,8 +75,8 @@ export class RagService {
     private readonly messageRepo: Repository<ChatMessage>,
     @Inject(EmbeddingsService)
     private readonly embeddingsService: EmbeddingsService,
-    @Inject(MistralService)
-    private readonly mistralService: MistralService,
+    @Inject(LlmService)
+    private readonly llmService: LlmService,
     @Inject(DataSource)
     private readonly dataSource: DataSource,
   ) {}
@@ -127,15 +127,15 @@ export class RagService {
     const tools = {
       think: createThinkTool(),
       done: createDoneTool(),
-      decompose_query: createDecomposeQueryTool(this.mistralService),
+      decompose_query: createDecomposeQueryTool(this.llmService),
       vector_search: createVectorSearchTool(this.embeddingsService),
       sql_query: createSqlQueryTool(this.dataSource),
       update_category: createUpdateCategoryTool(this.dataSource),
       chart_data: createChartDataTool(this.dataSource),
     };
 
-    // 5. Call mistralService.chatStream()
-    const streamResult = this.mistralService.chatStream({
+    // 5. Call llmService.chatStream()
+    const streamResult = this.llmService.chatStream({
       system: buildSystemPrompt(currency),
       messages,
       tools,

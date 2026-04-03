@@ -4,7 +4,7 @@ import { AppController } from './app.controller';
 import { HealthModule } from './health/health.module';
 import { UploadModule } from './upload/upload.module';
 import { TransactionsModule } from './transactions/transactions.module';
-import { MistralModule } from './mistral/mistral.module';
+import { LlmModule } from './llm/llm.module';
 import { EmbeddingsModule } from './embeddings/embeddings.module';
 import { RagModule } from './rag/rag.module';
 import { Statement } from './upload/entities/statement.entity';
@@ -19,7 +19,7 @@ const hasDatabase = process.env.DATABASE_URL && process.env.DATABASE_URL !== 'fa
 @Module({
   imports: [
     HealthModule,
-    MistralModule,
+    LlmModule,
     ...(hasDatabase
       ? [
           TypeOrmModule.forRoot({

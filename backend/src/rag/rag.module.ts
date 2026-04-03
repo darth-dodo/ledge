@@ -3,12 +3,12 @@ import { TypeOrmModule } from '@nestjs/typeorm';
 import { ChatSession } from './entities/chat-session.entity';
 import { ChatMessage } from './entities/chat-message.entity';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
-import { MistralModule } from '../mistral/mistral.module';
+import { LlmModule } from '../llm/llm.module';
 import { RagService } from './rag.service';
 import { RagController } from './rag.controller';
 
 @Module({
-  imports: [TypeOrmModule.forFeature([ChatSession, ChatMessage]), EmbeddingsModule, MistralModule],
+  imports: [TypeOrmModule.forFeature([ChatSession, ChatMessage]), EmbeddingsModule, LlmModule],
   controllers: [RagController],
   providers: [RagService],
   exports: [RagService],

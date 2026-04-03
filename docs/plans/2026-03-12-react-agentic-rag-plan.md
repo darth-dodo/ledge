@@ -1,5 +1,7 @@
 # ReAct Agentic RAG Implementation Plan
 
+> **Note**: As of M6, the LLM provider was migrated from Mistral to Groq (`llama-3.3-70b-versatile`), and embeddings from Mistral Embed to Ollama (`nomic-embed-text`). `MistralService` was renamed to `LlmService`. See [ADR-005](../adrs/adr-005-groq-ollama-migration.md) for details.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Upgrade the RAG chat from a simple tool-selector to a ReAct agent with structured reasoning, self-correction, and new capabilities (update_category, chart_data).

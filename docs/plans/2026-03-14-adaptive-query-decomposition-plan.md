@@ -1,5 +1,7 @@
 # Adaptive Query Decomposition Implementation Plan
 
+> **Note**: As of M6, the LLM provider was migrated from Mistral to Groq (`llama-3.3-70b-versatile`), and embeddings from Mistral Embed to Ollama (`nomic-embed-text`). `MistralService` was renamed to `LlmService`. See [ADR-005](../adrs/adr-005-groq-ollama-migration.md) for details.
+
 > **For Claude:** REQUIRED SUB-SKILL: Use superpowers:executing-plans to implement this plan task-by-task.
 
 **Goal:** Add a `decompose_query` tool to the ReAct agent loop that uses `generateObject` to split every user message into structured sub-queries with intent tags, guiding the agent's tool selection.

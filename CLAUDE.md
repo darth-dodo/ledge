@@ -30,11 +30,13 @@ Default to using Node.js with pnpm.
 - `PATCH /transactions/:id` — update category or description
 - Transactions are created automatically during upload (via parser pipeline)
 
-### Mistral module (`backend/src/mistral/`)
+### LLM module (`backend/src/llm/`)
 
-- Wraps `@mistralai/mistralai` SDK
-- Batch-categorizes transaction descriptions in a single API call
-- Requires `MISTRAL_API_KEY` in `.env`; categorization gracefully skips if key is absent
+- Uses `@ai-sdk/groq` with `generateText()` + `Output.object()` and Zod schema for structured output (AI SDK v6 pattern; `generateObject()` is deprecated)
+- Provider configured with `structuredOutputs: false` because most Groq models don't support `json_schema` response format — falls back to `json_object` mode
+- Batch-categorizes transaction descriptions via Groq (`qwen/qwen3-32b`)
+- `GROQ_API_KEY` is optional in `.env` — app starts without it, LLM features (categorization, chat) are disabled
+- Embeddings handled by `EmbeddingsService` using Ollama (`nomic-embed-text`, 768-dim); Ollama runs as a Docker Compose service
 
 ### Parser strategy (`backend/src/upload/parsers/`)
 
@@ -53,7 +55,7 @@ Default to using Node.js with pnpm.
 - `GET /chat/sessions/:id/messages` — get messages for a session
 - `DELETE /chat/sessions/:id` — delete a session and its messages
 - Tools: `decompose_query` (breaks the user message into sub-queries with intent tags, called first in every ReAct loop), `vector_search` (semantic similarity via pgvector embeddings), and `sql_query` (read-only SELECT against transactions table with safety validation)
-- Uses Vercel AI SDK v6 (`ai` + `@ai-sdk/mistral`) for streaming + tool-calling loops
+- Uses Vercel AI SDK v6 (`ai` + `@ai-sdk/groq`) for streaming + tool-calling loops
 - System prompt includes user's preferred currency for amount formatting
 
 ### Settings (`frontend/src/app/features/settings/`)
@@ -61,7 +63,7 @@ Default to using Node.js with pnpm.
 - `SettingsService` — persists currency preference in localStorage
 - Currency sent with each chat request, threaded into LLM system prompt
 
-### Mistral service additions
+### LLM service additions
 
-- `chatStream()` method added alongside existing `categorize()` — uses `streamText()` with `stopWhen: stepCountIs(n)` for multi-step tool calling
-- `decomposeQuery()` method — uses `generateObject` with a Zod schema to decompose a user message into `SubQuery[]` with intent tags; called by the `decompose_query` tool on every chat message
+- `chatStream()` method added alongside existing `categorize()` — uses `streamText()` via Groq with `stopWhen: stepCountIs(n)` for multi-step tool calling
+- `decomposeQuery()` method — uses `generateText` + `Output.object` with a Zod schema to decompose a user message into `SubQuery[]` with intent tags; called by the `decompose_query` tool on every chat message

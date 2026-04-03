@@ -6,16 +6,11 @@ import { Statement } from './entities/statement.entity';
 import { CsvParser } from './parsers/csv.parser';
 import { PdfParser } from './parsers/pdf.parser';
 import { TransactionsModule } from '../transactions/transactions.module';
-import { MistralModule } from '../mistral/mistral.module';
+import { LlmModule } from '../llm/llm.module';
 import { EmbeddingsModule } from '../embeddings/embeddings.module';
 
 @Module({
-  imports: [
-    TypeOrmModule.forFeature([Statement]),
-    TransactionsModule,
-    MistralModule,
-    EmbeddingsModule,
-  ],
+  imports: [TypeOrmModule.forFeature([Statement]), TransactionsModule, LlmModule, EmbeddingsModule],
   controllers: [UploadController],
   providers: [
     UploadService,

@@ -12,7 +12,7 @@ which are parsed into transactions, categorized by AI, and vectorized for
 semantic search. A conversational ReAct agent then answers natural language
 questions over both SQL and vector indexes, streaming responses in real time.
 
-**Stack**: NestJS 11 · Angular 21 · PostgreSQL + pgvector · Mistral AI ·
+**Stack**: NestJS 11 · Angular 21 · PostgreSQL + pgvector · Groq · Ollama ·
 Vercel AI SDK v6
 **Size**: 73 source files · 329 tests (275 backend / 54 frontend) · 5 database
 tables · 12 API endpoints
@@ -37,7 +37,7 @@ graph TB
 
         US[Upload Service]
         PS["Parsers\n(PDF + CSV)"]
-        MS[Mistral Service]
+        LS[LLM Service]
         CS[Chunker Service]
         ES[Embeddings Service]
         TS[Transactions Service]
@@ -53,22 +53,25 @@ graph TB
         CM[(chat_messages)]
     end
 
-    subgraph AI ["Mistral AI"]
+    subgraph GroqAI ["Groq"]
         CAT[Categorize]
-        EMB[Embed]
-        LLM[mistral-large-latest]
+        LLM[qwen/qwen3-32b]
+    end
+
+    subgraph OllamaAI ["Ollama"]
+        EMB[nomic-embed-text]
     end
 
     UP -->|POST /upload| UC
     TX -->|GET /transactions| TC
     CH -->|POST /chat SSE| RC
 
-    UC --> US --> PS --> MS --> CAT
+    UC --> US --> PS --> LS --> CAT
     US --> CS --> ES --> EMB
     US --> S & T
     ES --> E
     TC --> TS --> T
-    RC --> RS --> MS --> LLM
+    RC --> RS --> LS --> LLM
     RS --> AG
     AG --> T & E
     RS --> CS2 & CM
@@ -76,7 +79,8 @@ graph TB
     style Frontend fill:#e8f4f8
     style Backend fill:#fff3cd
     style DB fill:#d4edda
-    style AI fill:#f8d7da
+    style GroqAI fill:#f8d7da
+    style OllamaAI fill:#fce4ec
 ```
 
 ---
@@ -89,7 +93,7 @@ sequenceDiagram
     participant UC as UploadController
     participant US as UploadService
     participant P as Parser (PDF/CSV)
-    participant MS as MistralService
+    participant LS as LlmService
     participant ES as EmbeddingsService
     participant DB as PostgreSQL
 
@@ -98,13 +102,13 @@ sequenceDiagram
     US->>DB: INSERT statement (metadata + raw_text)
     US->>P: canParse() → parse(buffer)
     P-->>US: Transaction[]
-    US->>MS: categorize(descriptions[])
-    MS-->>US: category[] (batched, max 20)
+    US->>LS: categorize(descriptions[])
+    LS-->>US: category[] (batched, max 20)
     US->>DB: INSERT transactions (with categories)
     US->>ES: embedStatement(statementId, rawText)
     ES->>ES: chunk(rawText) → chunks[]
-    ES->>MS: embed(chunks[])
-    MS-->>ES: vector(1024)[]
+    ES->>ES: embed via Ollama(chunks[])
+    Note over ES: nomic-embed-text → 768-dim
     ES->>DB: INSERT embeddings (pgvector)
     US-->>UC: UploadResponseDto
     UC-->>U: 201 { id, filename, ... }
@@ -118,7 +122,7 @@ sequenceDiagram
 flowchart TD
     A([User message]) --> B[Load last 20 messages\nfrom chat_sessions]
     B --> C[Build tools map\n7 factory functions]
-    C --> D[mistral.chatStream\nstreamText with stopWhen]
+    C --> D[llm.chatStream\nstreamText with stopWhen]
 
     D --> E{Agent step}
 
@@ -159,18 +163,18 @@ sequenceDiagram
     participant CL as Angular ChatService
     participant RC as RagController
     participant RS as RagService
-    participant MS as MistralService
-    participant LLM as Mistral API
+    participant LS as LlmService
+    participant LLM as Groq API
 
     CL->>RC: POST /chat { sessionId, message, currency }
     RC->>RC: Set headers\nContent-Type: text/event-stream
     RC->>RS: chat(sessionId, message, currency)
-    RS->>MS: chatStream({ system, messages, tools })
-    MS->>LLM: streamText() — ReAct loop begins
+    RS->>LS: chatStream({ system, messages, tools })
+    LS->>LLM: streamText() — ReAct loop begins
 
     loop Agent steps (max 10)
-        LLM-->>MS: tool call
-        MS-->>RS: tool result via fullStream
+        LLM-->>LS: tool call
+        LS-->>RS: tool result via fullStream
         RS-->>RC: chunk (text-delta or tool-result)
         RC-->>CL: data: {"type":"text-delta","delta":"..."}
     end
@@ -250,7 +254,7 @@ ledger/
 │       ├── upload/           # File ingestion pipeline
 │       ├── transactions/     # Transaction queries and updates
 │       ├── embeddings/       # Text chunking + pgvector storage
-│       ├── mistral/          # AI SDK wrapper (categorize, embed, stream)
+│       ├── llm/              # AI SDK wrapper (categorize, stream via Groq)
 │       ├── rag/              # ReAct chat agent + 7 tools
 │       ├── health/           # GET /health
 │       └── db/               # TypeORM migrations and data source
@@ -260,7 +264,7 @@ ledger/
 │       ├── shared/           # Pipes (Markdown), Components (FileDropzone)
 │       └── features/         # Pages: Upload, Transactions, Chat, Settings
 ├── docs/                     # Architecture, product, ADRs, plans, milestones
-└── docker-compose.yml        # PostgreSQL + pgvector
+└── docker-compose.yml        # PostgreSQL + pgvector + Ollama
 ```
 
 ---
@@ -273,7 +277,7 @@ Handles file ingestion end-to-end.
 
 - **`upload.controller.ts`** — `POST /upload`, `GET /statements`,
   `DELETE /statements/:id`, `DELETE /purge`
-- **`upload.service.ts`** — Streams file to disk, selects parser, calls Mistral
+- **`upload.service.ts`** — Streams file to disk, selects parser, calls LlmService
   for categorization, triggers embedding pipeline
 - **`parsers/parser.interface.ts`** — Strategy interface: `canParse()` +
   `parse()`
@@ -305,28 +309,32 @@ Thin query layer over the transactions table.
 
 Vector search pipeline for semantic queries.
 
-- **`embeddings.service.ts`** — Calls Mistral embed API, stores 1024-dim
+- **`embeddings.service.ts`** — Calls Ollama (`nomic-embed-text`), stores 768-dim
   vectors via pgvector, cosine similarity search
 - **`chunker.service.ts`** — Splits raw statement text into overlapping segments
   with token counting
-- **`entities/embedding.entity.ts`** — Chunk content + `vector(1024)` column;
+- **`entities/embedding.entity.ts`** — Chunk content + `vector(768)` column;
   IVFFlat indexed
 
 ---
 
-### `mistral/`
+### `llm/`
 
-Single service wrapping two Mistral clients.
+Single service wrapping Groq via `@ai-sdk/groq`.
 
-- **`mistral.service.ts`**
-  - `categorize(descriptions[])` — Batch categorize via `@mistralai/mistralai`
-    SDK; handles JSON response variants; batches at 20
+- **`llm.service.ts`**
+  - `categorize(descriptions[])` — Batch categorize via `generateText()` +
+    `Output.object()` with Zod schema; validates against `VALID_CATEGORIES`; batches at 20
   - `chatStream(params)` — Vercel AI SDK `streamText()` with tool-calling loop
-  - `decomposeQuery(message)` — `generateObject()` with Zod schema; classifies
-    intent as `sql_aggregate | sql_filter | vector_search | hybrid`
+    using `qwen/qwen3-32b`
+  - `decomposeQuery(message)` — `generateText()` + `Output.object()` with Zod
+    schema; classifies intent as `sql_aggregate | sql_filter | vector_search | hybrid`
 
-Requires `MISTRAL_API_KEY`. Degrades gracefully if not set (categorization
-skipped, chat throws).
+Embeddings are handled separately by `EmbeddingsService` using Ollama
+(`nomic-embed-text`, 768-dim vectors) at `OLLAMA_BASE_URL`.
+
+`GROQ_API_KEY` is optional (not required for startup). When absent,
+categorization is skipped and chat throws.
 
 ---
 
@@ -337,7 +345,7 @@ The agentic chat system. Largest module.
 - **`rag.controller.ts`** — `POST /chat` (SSE stream), `GET /chat/sessions`,
   `GET /chat/sessions/:id/messages`, `DELETE /chat/sessions/:id`
 - **`rag.service.ts`** — Session management, conversation history (last 20
-  messages), tool wiring, calls `mistral.chatStream()`, saves response async
+  messages), tool wiring, calls `llm.chatStream()`, saves response async
 - **`entities/chat-session.entity.ts`** — UUID, title (auto from first message),
   timestamps
 - **`entities/chat-message.entity.ts`** — UUID, session FK, role, content,
@@ -350,7 +358,7 @@ dependencies, returning a Vercel AI SDK `tool()` with a Zod `inputSchema`.
 
 | Tool              | Factory                                     | Purpose                                         |
 | ----------------- | ------------------------------------------- | ----------------------------------------------- |
-| `decompose_query` | `createDecomposeQueryTool(mistralService)`  | Split compound questions into typed sub-queries |
+| `decompose_query` | `createDecomposeQueryTool(llmService)`      | Split compound questions into typed sub-queries |
 | `think`           | `createThinkTool()`                         | Internal reasoning step, echoes thought         |
 | `sql_query`       | `createSqlQueryTool(dataSource)`            | Safe SELECT-only SQL against transactions       |
 | `vector_search`   | `createVectorSearchTool(embeddingsService)` | Cosine similarity search                        |
@@ -444,7 +452,7 @@ All routes are lazy-loaded standalone components (no NgModules).
 const tools = {
   sql_query: createSqlQueryTool(this.dataSource),
   vector_search: createVectorSearchTool(this.embeddingsService),
-  decompose_query: createDecomposeQueryTool(this.mistralService),
+  decompose_query: createDecomposeQueryTool(this.llmService),
   // ...
 };
 ```
@@ -502,19 +510,20 @@ Coverage thresholds enforced in CI at 85% (backend `vitest.config.ts`).
 
 ## Environment Variables
 
-| Variable          | Required                 | Purpose                              |
-| ----------------- | ------------------------ | ------------------------------------ |
-| `DATABASE_URL`    | Yes                      | PostgreSQL connection string         |
-| `MISTRAL_API_KEY` | Yes (for AI features)    | Mistral API auth; omit to disable AI |
-| `PORT`            | No (default 3000)        | Backend listen port                  |
-| `UPLOAD_DIR`      | No (default `./uploads`) | File storage path                    |
+| Variable          | Required                 | Purpose                           |
+| ----------------- | ------------------------ | --------------------------------- |
+| `DATABASE_URL`    | Yes                      | PostgreSQL connection string      |
+| `GROQ_API_KEY`    | No (optional)            | Groq API auth; omit to disable AI |
+| `OLLAMA_BASE_URL` | No (default `localhost`) | Ollama server URL for embeddings  |
+| `PORT`            | No (default 3000)        | Backend listen port               |
+| `UPLOAD_DIR`      | No (default `./uploads`) | File storage path                 |
 
 ---
 
 ## Running Locally
 
 ```bash
-# 1. Start PostgreSQL with pgvector
+# 1. Start PostgreSQL with pgvector + Ollama
 docker compose up -d
 
 # 2. Install deps
@@ -522,7 +531,7 @@ pnpm install
 
 # 3. Configure
 cp backend/.env.example backend/.env
-# Add MISTRAL_API_KEY to backend/.env
+# Add GROQ_API_KEY and OLLAMA_BASE_URL to backend/.env
 
 # 4. Run migrations
 cd backend && pnpm migrate

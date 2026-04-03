@@ -15,7 +15,8 @@
   <img src="https://img.shields.io/badge/Angular-21-DD0031?logo=angular&logoColor=white" alt="Angular">
   <img src="https://img.shields.io/badge/TypeScript-5.9-3178C6?logo=typescript&logoColor=white" alt="TypeScript">
   <img src="https://img.shields.io/badge/PostgreSQL-pgvector-4169E1?logo=postgresql&logoColor=white" alt="PostgreSQL">
-  <img src="https://img.shields.io/badge/Mistral_AI-mistral--large-FF7000" alt="Mistral AI">
+  <img src="https://img.shields.io/badge/Groq-qwen3--32b-F55036" alt="Groq">
+  <img src="https://img.shields.io/badge/Ollama-nomic--embed--text-1A1A2E" alt="Ollama">
   <img src="https://img.shields.io/badge/Vercel_AI_SDK-v6-000000?logo=vercel&logoColor=white" alt="Vercel AI SDK">
   <img src="https://img.shields.io/badge/ReAct-agent-8B5CF6" alt="ReAct Agent">
   <img src="https://img.shields.io/badge/Tailwind_CSS-4-06B6D4?logo=tailwindcss&logoColor=white" alt="Tailwind CSS">
@@ -41,7 +42,7 @@ Bank statements sit in downloads folders as PDFs and CSVs. Understanding spendin
 | ---------------------------- | ------------------ | ------------------------------------------------------ |
 | Statement Upload             | :white_check_mark: | Drag-and-drop PDF/CSV with multi-bank support          |
 | Transaction Parsing          | :white_check_mark: | Extensible parser strategy (PDF + CSV heuristics)      |
-| AI Categorization            | :white_check_mark: | Mistral-powered batch categorization of transactions   |
+| AI Categorization            | :white_check_mark: | Groq-powered batch categorization of transactions      |
 | Vector Embeddings            | :white_check_mark: | pgvector storage with cosine similarity search         |
 | RAG Chat                     | :white_check_mark: | Natural language Q&A over your financial data          |
 | Agentic ReAct Loop           | :white_check_mark: | Multi-step tool-calling agent (think → act → observe)  |
@@ -80,7 +81,7 @@ graph TB
 
         US[Upload Service]
         PS["Parsers (PDF + CSV)"]
-        MS[Mistral Service]
+        MS[LLM Service]
         CS[Chunker Service]
         ES[Embeddings Service]
         TS[Transactions Service]
@@ -96,10 +97,10 @@ graph TB
         SM[(chat_messages)]
     end
 
-    subgraph External ["Mistral AI"]
+    subgraph External ["AI Services"]
         CAT[Categorize]
-        EMB[Embed]
-        LLM[mistral-large-latest]
+        EMB["Embed (Ollama)"]
+        LLM["Groq\nqwen/qwen3-32b"]
     end
 
     UP -->|POST /upload| UC
@@ -131,12 +132,16 @@ graph TB
 git clone git@github.com:darth-dodo/ledger.git
 cd ledger && pnpm install
 
-# Start PostgreSQL (with pgvector)
+# Start PostgreSQL (with pgvector) and Ollama
 docker compose up -d
+
+# Pull the embedding model into the Ollama container
+docker exec ledger-ollama-1 ollama pull nomic-embed-text
 
 # Configure environment
 cp backend/.env.example backend/.env
-# Add your MISTRAL_API_KEY to backend/.env
+# Optionally add GROQ_API_KEY to backend/.env (LLM features disabled without it)
+# OLLAMA_BASE_URL defaults to http://localhost:11434
 
 # Start backend (port 3000)
 cd backend && pnpm dev
@@ -182,7 +187,7 @@ Coverage is enforced in CI and thresholds are set at 85% for the backend (`backe
 | Frontend | Angular 21, Tailwind CSS 4, daisyUI | SPA with standalone components                    |
 | Backend  | NestJS 11, TypeORM                  | REST API with dependency injection                |
 | Database | PostgreSQL + pgvector               | Relational data + vector embeddings               |
-| AI       | Mistral AI + Vercel AI SDK          | Categorization, embeddings, ReAct agent streaming |
+| AI       | Groq + Ollama + Vercel AI SDK       | Categorization, embeddings, ReAct agent streaming |
 | Testing  | Vitest                              | Unit + integration tests (336 total)              |
 | Runtime  | tsx, pnpm                           | TypeScript execution, package management          |
 
@@ -195,7 +200,7 @@ ledger/
 │       ├── upload/         # POST /upload, GET/DELETE /statements
 │       ├── transactions/   # GET /transactions, PATCH /transactions/:id
 │       ├── embeddings/     # Chunking + vector embedding pipeline
-│       ├── mistral/        # Mistral AI client (categorize + embed + chatStream)
+│       ├── llm/            # LLM service (categorize + chatStream via Groq)
 │       ├── rag/            # Chat sessions, ReAct agent, 7 agent tools
 │       ├── health/         # GET /health
 │       └── db/             # Migrations and data source config
@@ -209,7 +214,7 @@ ledger/
 │   ├── architecture.md     # System design
 │   ├── adrs/               # Architecture decision records
 │   └── milestones/         # Milestone docs and retros
-└── docker-compose.yml      # PostgreSQL + pgvector
+└── docker-compose.yml      # PostgreSQL + pgvector + Ollama
 ```
 
 ## Documentation
